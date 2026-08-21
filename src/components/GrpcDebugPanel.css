@@ -1,0 +1,251 @@
+.debug-panel {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.debug-panel .filters-bar {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(200, 180, 230, 0.16);
+  border-radius: 0.85rem;
+  background: rgba(14, 12, 24, 0.55);
+}
+
+.debug-services {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.debug-chip {
+  border: 1px solid var(--line);
+  background: rgba(12, 18, 16, 0.7);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.28rem 0.6rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.debug-chip:hover {
+  border-color: rgba(61, 186, 122, 0.4);
+}
+
+.debug-chip.is-active {
+  background: var(--accent-dim);
+  border-color: rgba(61, 186, 122, 0.45);
+}
+
+.debug-panel .filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.debug-panel .filter-field {
+  display: grid;
+  gap: 0.3rem;
+  flex: 0 1 16rem;
+}
+
+.debug-panel .filter-field.grow {
+  flex: 1 1 18rem;
+}
+
+.debug-panel .filter-field span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.debug-panel .filter-field input,
+.debug-panel .filter-field select,
+.debug-panel textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: rgba(12, 18, 16, 0.7);
+  color: var(--text);
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+}
+
+.debug-panel textarea {
+  min-height: 0;
+  height: 100%;
+  resize: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.debug-panel .btn {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+}
+
+.debug-panel .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.debug-panel .btn.primary {
+  background: var(--accent-dim);
+  border-color: rgba(61, 186, 122, 0.35);
+}
+
+.debug-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.debug-meta .ok {
+  color: var(--accent);
+}
+
+.debug-meta .err {
+  color: #e8b4b4;
+}
+
+.debug-meta .warn {
+  color: #e8d4a8;
+}
+
+.debug-workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+}
+
+.debug-pane {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: rgba(12, 18, 16, 0.45);
+  padding: 0.75rem 0.85rem;
+}
+
+.debug-pane h2 {
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.debug-pane h2 button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.debug-pane h2 button:hover {
+  color: var(--accent);
+}
+
+.debug-json {
+  margin: 0;
+  min-height: 0;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+
+.debug-empty {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.debug-history {
+  grid-column: 1 / -1;
+  min-height: 0;
+  max-height: 8.5rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: rgba(12, 18, 16, 0.45);
+}
+
+.debug-history table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.debug-history th,
+.debug-history td {
+  text-align: left;
+  padding: 0.35rem 0.7rem;
+  border-bottom: 1px solid rgba(200, 180, 230, 0.12);
+  white-space: nowrap;
+}
+
+.debug-history th {
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+}
+
+.debug-history tr {
+  cursor: pointer;
+}
+
+.debug-history tr:hover {
+  background: rgba(61, 186, 122, 0.08);
+}
+
+.debug-history .ok {
+  color: var(--accent);
+}
+
+.debug-history .err {
+  color: #e8b4b4;
+}
+
+.debug-panel .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+.debug-panel code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+
+@media (max-width: 960px) {
+  .debug-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(10rem, 1fr) minmax(12rem, 1.2fr) auto;
+  }
+}

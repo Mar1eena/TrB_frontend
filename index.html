@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TrB — панель управления</title>
+    <style>
+      :root {
+        --line: rgba(200, 180, 230, 0.16);
+        --text: #efe8f8;
+        --muted: #a99bb8;
+        --accent: #3dba7a;
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        font-family: "Segoe UI", system-ui, sans-serif;
+        color: var(--text);
+        background: linear-gradient(160deg, #0d0618 0%, #1a0b2e 45%, #2a1450 100%);
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: 17.5rem 1fr;
+        pointer-events: none;
+      }
+      #app {
+        position: relative;
+        z-index: 2;
+        min-height: 100%;
+      }
+      .boot-sidebar {
+        border-right: 1px solid var(--line);
+        background: rgba(8, 12, 10, 0.92);
+        padding: 1.25rem 0.85rem;
+      }
+      .boot-brand {
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: 1.6rem;
+        letter-spacing: -0.03em;
+        padding: 0.35rem 0.55rem 0.85rem;
+      }
+      .boot-brand span {
+        color: var(--accent);
+      }
+      .boot-main {
+        padding: 1.5rem 1.25rem;
+        background: transparent;
+      }
+      .boot-eyebrow {
+        color: var(--muted);
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin: 0 0 0.55rem;
+      }
+      .boot-main h1 {
+        margin: 0 0 0.65rem;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(1.4rem, 3vw, 1.9rem);
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .boot-main p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.55;
+        max-width: 34rem;
+      }
+      @media (max-width: 800px) {
+        #boot {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <div id="root">
+      <div id="boot" aria-hidden="true">
+        <aside class="boot-sidebar">
+          <div class="boot-brand">TrB<span>.</span></div>
+        </aside>
+        <main class="boot-main">
+          <p class="boot-eyebrow">Админка / API</p>
+          <h1>Админка NATS</h1>
+          <p>Загрузка интерфейса…</p>
+        </main>
+      </div>
+      <div id="app"></div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

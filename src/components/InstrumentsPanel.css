@@ -1,0 +1,346 @@
+.instruments-vtable .vtable {
+  --vtable-cols:
+    var(--i-col-ticker, 8rem)
+    var(--i-col-name, 14rem)
+    var(--i-col-figi, 10rem)
+    var(--i-col-uid, 12rem)
+    var(--i-col-class, 6rem)
+    var(--i-col-currency, 5rem)
+    var(--i-col-exchange, 8rem)
+    var(--i-col-sector, 8rem)
+    var(--i-col-lot, 4rem)
+    var(--i-col-version, 12rem)
+    var(--i-col-version-count, 5rem);
+}
+
+.instruments-vtable .vtable-head .vtable-cell {
+  height: auto;
+  min-height: 4.4rem;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.25rem;
+  padding: 0.35rem 0.45rem 0.45rem;
+}
+
+.instruments-vtable .vtable-head .sort-btn {
+  height: auto;
+  padding: 0.15rem 0.2rem;
+}
+
+.instruments-vtable .col-filter {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(200, 180, 230, 0.18);
+  background: rgba(12, 18, 16, 0.75);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 0.28rem 0.4rem;
+  border-radius: 0.3rem;
+}
+
+.instruments-vtable .col-filter:focus {
+  outline: 1px solid rgba(61, 186, 122, 0.45);
+}
+
+.instruments-vtable .vtable-head .sticky-col,
+.instruments-vtable .vtable-row .sticky-col {
+  position: static;
+  box-shadow: none;
+}
+
+.instrument-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(6, 4, 12, 0.75);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+}
+
+.instrument-modal {
+  background: #151122;
+  border: 1px solid rgba(200, 180, 230, 0.25);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 24px rgba(162, 107, 255, 0.15);
+  border-radius: 0.85rem;
+  width: 100%;
+  max-width: 46rem;
+  max-height: min(80vh, 44rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.instrument-modal-wide {
+  max-width: min(56rem, 96vw);
+}
+
+.instrument-modal-compare {
+  max-width: min(68rem, 96vw);
+}
+
+.instrument-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem 0.85rem;
+  border-bottom: 1px solid rgba(200, 180, 230, 0.14);
+}
+
+.instrument-modal-head .eyebrow {
+  margin-bottom: 0.25rem;
+}
+
+.instrument-modal-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.instrument-modal-close {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+}
+
+.instrument-modal-close:hover {
+  color: var(--text);
+}
+
+.instrument-modal-body {
+  overflow: auto;
+  padding: 0.85rem 1.15rem 1.15rem;
+}
+
+.instrument-confirm-modal {
+  max-width: 26rem;
+  max-height: none;
+}
+
+.instrument-confirm-text {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.instrument-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  padding: 0.85rem 1.15rem 1.05rem;
+  border-top: 1px solid rgba(200, 180, 230, 0.14);
+}
+
+.instrument-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem 1.1rem;
+  margin: 0;
+}
+
+.instrument-version-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.instrument-compare-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text);
+  font-size: 0.84rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.instrument-compare-toggle input {
+  accent-color: var(--accent, #3dba7a);
+}
+
+.instrument-versions-hint {
+  margin: 0 0 0.85rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.instrument-versions-current-hint {
+  margin: -0.35rem 0 0.85rem;
+  color: rgba(61, 186, 122, 0.95);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.instrument-versions-table-wrap {
+  overflow: auto;
+  border: 1px solid rgba(200, 180, 230, 0.16);
+  border-radius: 0.45rem;
+}
+
+.instrument-versions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.instrument-versions-table th,
+.instrument-versions-table td {
+  padding: 0.45rem 0.65rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(200, 180, 230, 0.1);
+  white-space: nowrap;
+}
+
+.instrument-versions-table th {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: rgba(12, 18, 16, 0.55);
+  position: sticky;
+  top: 0;
+}
+
+.instrument-versions-table tbody tr {
+  cursor: pointer;
+}
+
+.instrument-versions-table tbody tr:hover {
+  background: rgba(162, 107, 255, 0.1);
+}
+
+.instrument-versions-table tbody tr.is-current-version {
+  background: rgba(61, 186, 122, 0.16);
+}
+
+.instrument-versions-table tbody tr.is-current-version:hover {
+  background: rgba(61, 186, 122, 0.24);
+}
+
+.instrument-versions-table tbody tr.is-compare-picked {
+  box-shadow: inset 3px 0 0 rgba(162, 107, 255, 0.85);
+}
+
+.instrument-versions-table tbody tr.is-current-version.is-compare-picked {
+  box-shadow: inset 3px 0 0 rgba(162, 107, 255, 0.95);
+}
+
+.instrument-versions-check {
+  width: 3.4rem;
+  text-align: center;
+}
+
+.instrument-versions-table th.instrument-versions-check,
+.instrument-versions-table td.instrument-versions-check {
+  text-align: center;
+  padding-left: 0.45rem;
+  padding-right: 0.45rem;
+}
+
+.instrument-versions-table td.instrument-versions-check input {
+  cursor: pointer;
+  accent-color: var(--accent, #3dba7a);
+}
+
+.instrument-versions-table td:nth-child(4),
+.instrument-versions-table td:nth-child(5) {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.instrument-compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.instrument-compare-table th,
+.instrument-compare-table td {
+  padding: 0.45rem 0.65rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(200, 180, 230, 0.1);
+  vertical-align: top;
+}
+
+.instrument-compare-table thead th {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: rgba(12, 18, 16, 0.55);
+  position: sticky;
+  top: 0;
+  white-space: nowrap;
+}
+
+.instrument-compare-table tbody th {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  width: 11rem;
+}
+
+.instrument-compare-table tbody td {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+.instrument-compare-table tbody tr.is-changed {
+  background: rgba(232, 176, 80, 0.14);
+}
+
+.instrument-compare-table tbody tr.is-changed td {
+  color: #f3d7a0;
+}
+
+.instrument-compare-empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 0.9rem 0.65rem;
+}
+
+.instrument-field dt {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 0.15rem;
+}
+
+.instrument-field dd {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .instrument-fields {
+    grid-template-columns: 1fr;
+  }
+}

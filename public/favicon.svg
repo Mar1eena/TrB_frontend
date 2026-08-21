@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#150e26"/>
+  <text x="14" y="22" fill="#efe8f8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="700" font-size="14" text-anchor="middle">TrB</text>
+  <circle cx="26" cy="20" r="2.5" fill="#3dba7a"/>
+</svg>

@@ -1,0 +1,260 @@
+.layout {
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 17.5rem 1fr;
+}
+
+.sidebar {
+  border-right: 1px solid var(--line);
+  background: rgba(8, 12, 10, 0.72);
+  backdrop-filter: blur(10px);
+  padding: 1.25rem 0.85rem 1.5rem;
+  animation: slide-in 0.45s ease-out both;
+}
+
+.sidebar-brand {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.6rem;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  padding: 0.35rem 0.55rem 0.85rem;
+}
+
+.sidebar-brand span {
+  color: var(--accent);
+}
+
+.sidebar-caption {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 0.55rem 0.55rem;
+}
+
+.service-tree {
+  overflow: auto;
+  max-height: calc(100vh - 5.5rem);
+}
+
+.tree-root,
+.tree-children {
+  list-style: none;
+}
+
+.tree-node {
+  --depth: 0;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-height: 1.85rem;
+  padding-left: calc(var(--depth) * 0.85rem);
+  border-radius: 0.35rem;
+}
+
+.tree-row.is-selected {
+  background: var(--accent-dim);
+}
+
+.tree-toggle,
+.tree-label {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tree-toggle {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--muted);
+  flex: 0 0 auto;
+  line-height: 1;
+}
+
+.tree-toggle-spacer {
+  width: 1.25rem;
+  flex: 0 0 auto;
+}
+
+.tree-label {
+  flex: 1;
+  text-align: left;
+  padding: 0.25rem 0.35rem;
+  border-radius: 0.3rem;
+  color: var(--text);
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-label.is-group {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tree-label:hover {
+  color: var(--accent);
+}
+
+.content {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  place-items: start stretch;
+  padding: 1.5rem 1.25rem 1.25rem;
+  overflow: hidden;
+}
+
+.panel-page {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+  animation: rise 0.55s ease-out both;
+}
+
+.scheduler-header h1 {
+  margin-bottom: 0.5rem;
+}
+
+.scheduler-header p:last-child {
+  margin-bottom: 0;
+}
+
+.history-panel {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.scheduler-panel {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.panel {
+  width: min(40rem, 100%);
+  justify-self: center;
+  border: 1px solid var(--line);
+  background: rgba(12, 18, 16, 0.55);
+  backdrop-filter: blur(10px);
+  padding: 2.5rem 2rem;
+  animation: rise 0.7s ease-out both;
+}
+
+.eyebrow {
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.55rem;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+h1 {
+  font-size: clamp(1.4rem, 3vw, 1.9rem);
+  font-weight: 500;
+  margin-bottom: 0.65rem;
+  font-family: Georgia, "Times New Roman", serif;
+  letter-spacing: -0.02em;
+}
+
+p {
+  color: var(--muted);
+  line-height: 1.55;
+  max-width: 34rem;
+  margin-bottom: 1.75rem;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--line);
+  background: var(--accent-dim);
+  color: var(--text);
+  font-size: 0.85rem;
+  padding: 0.4rem 0.7rem;
+}
+
+.dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 rgba(255, 0, 136, 0.55);
+  animation: pulse 2s ease-out infinite;
+}
+
+@keyframes pulse {
+  70% {
+    box-shadow: 0 0 0 0.55rem rgba(61, 186, 122, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(61, 186, 122, 0);
+  }
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  color: #c6e0d0;
+}
+
+@media (max-width: 800px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    max-height: 42vh;
+  }
+
+  .service-tree {
+    max-height: calc(42vh - 5rem);
+  }
+}

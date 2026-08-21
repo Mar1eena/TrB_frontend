@@ -1,0 +1,64 @@
+:root {
+  --bg-0: #12081c;
+  --bg-1: #1a0f2e;
+  --line: rgba(200, 180, 230, 0.16);
+  --text: #efe8f8;
+  --muted: #a99bb8;
+  --accent: #3dba7a;
+  --accent-dim: rgba(61, 186, 122, 0.18);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(ellipse 80% 55% at 12% -8%, rgba(22, 143, 213, 0.35), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 100% 0%, rgba(99, 52, 180, 0.4), transparent 52%),
+    radial-gradient(ellipse 60% 40% at 50% 100%, rgba(172, 20, 20, 0.28), transparent 55%),
+    linear-gradient(160deg, #0d0618 0%, #1a0b2e 45%, #2a1450 100%);
+}
+
+/* Global scrollbars for the whole UI */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(200, 180, 230, 0.35) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 0.55rem;
+  height: 0.55rem;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(200, 180, 230, 0.28);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(61, 186, 122, 0.55);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}

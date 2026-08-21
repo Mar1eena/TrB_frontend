@@ -1,0 +1,332 @@
+/* Shared data tables for the whole web UI */
+
+.table-scroll {
+  --table-bg: #120e1c;
+  --table-row: #161221;
+  --table-row-alt: #1c1730;
+  --table-head: #221a36;
+  --table-hover: #1f3a2f;
+  --table-selected: #244636;
+  --table-cell-line: rgba(200, 180, 230, 0.22);
+
+  border: 1px solid rgba(200, 180, 230, 0.18);
+  border-radius: 0.85rem;
+  background: var(--table-bg);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 18px 40px rgba(4, 2, 12, 0.35);
+  overflow: auto;
+  max-height: min(58vh, 40rem);
+}
+
+.table-scroll.table-scroll-fill {
+  width: 100%;
+  min-height: 0;
+  max-height: none;
+  height: 100%;
+}
+
+.table-scroll::-webkit-scrollbar {
+  width: 0.55rem;
+  height: 0.55rem;
+}
+
+.table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(200, 180, 230, 0.22);
+  border-radius: 999px;
+}
+
+.table-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(61, 186, 122, 0.45);
+}
+
+.data-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+  font-size: 0.875rem;
+}
+
+.data-table.data-table-fill {
+  width: 100%;
+}
+
+.data-table th,
+.data-table td {
+  border-right: 1px solid var(--table-cell-line);
+  border-bottom: 1px solid var(--table-cell-line);
+  padding: 0.7rem 0.9rem;
+  white-space: nowrap;
+  background-color: var(--table-row);
+  background-clip: padding-box;
+  vertical-align: middle;
+  transition: background-color 0.15s ease;
+}
+
+.data-table th:first-child,
+.data-table td:first-child {
+  border-left: 1px solid var(--table-cell-line);
+}
+
+.data-table tbody tr:nth-child(even) td {
+  background-color: var(--table-row-alt);
+}
+
+.data-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background-color: var(--table-head);
+  background-clip: padding-box;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-top: 1px solid var(--table-cell-line);
+  border-bottom: 1px solid rgba(61, 186, 122, 0.45);
+  box-shadow: 0 8px 12px -8px rgba(4, 2, 12, 0.7);
+}
+
+.data-table .sticky-col {
+  position: sticky;
+  z-index: 2;
+  background-color: var(--table-row);
+}
+
+.data-table tbody tr:nth-child(even) .sticky-col {
+  background-color: var(--table-row-alt);
+}
+
+.data-table thead .sticky-col {
+  z-index: 6;
+  background-color: var(--table-head);
+}
+
+.data-table .mono,
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  color: rgba(214, 204, 232, 0.82);
+}
+
+.data-table .col-check {
+  left: 0;
+  width: 2.75rem;
+  min-width: 2.75rem;
+  text-align: center;
+  padding-left: 0.7rem;
+  padding-right: 0.7rem;
+}
+
+.data-table .col-check input[type="checkbox"],
+.data-table .col-interval input[type="checkbox"] {
+  width: 0.95rem;
+  height: 0.95rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.data-table .col-uid,
+.data-table .col-name,
+.data-table .col-ticker,
+.data-table .col-figi {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.data-table .col-uid {
+  min-width: 12rem;
+  max-width: 14rem;
+}
+
+.data-table .col-name {
+  min-width: 12rem;
+  max-width: 18rem;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.data-table .col-ticker {
+  min-width: 8rem;
+  max-width: 12rem;
+}
+
+.data-table .col-figi {
+  min-width: 10rem;
+  max-width: 12rem;
+}
+
+.data-table .col-interval {
+  text-align: center;
+  min-width: 3.1rem;
+}
+
+.data-table .col-actions {
+  text-align: right;
+}
+
+.data-table tbody tr.is-disabled {
+  opacity: 0.42;
+}
+
+.data-table tbody tr.is-selected td,
+.data-table tbody tr.is-selected .sticky-col {
+  background-color: var(--table-selected);
+}
+
+.data-table tbody tr:hover td,
+.data-table tbody tr:hover .sticky-col {
+  background-color: var(--table-hover);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: 1px solid var(--table-cell-line);
+}
+
+.data-table th.sortable {
+  padding: 0;
+}
+
+.data-table .sort-btn {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  padding: 0.7rem 0.9rem;
+  text-align: left;
+}
+
+.data-table .sort-btn:hover {
+  color: var(--accent);
+}
+
+.data-table .sort-indicator {
+  opacity: 0.35;
+  font-size: 0.75rem;
+}
+
+.data-table .sort-indicator.is-active {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* Soft chips */
+.table-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(200, 180, 230, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.78rem;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.table-chip.ticker {
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #d8ffe8;
+  border-color: rgba(61, 186, 122, 0.35);
+  background: rgba(61, 186, 122, 0.14);
+}
+
+.table-chip.interval {
+  font-variant-numeric: tabular-nums;
+  color: #e8ddff;
+  border-color: rgba(148, 120, 220, 0.35);
+  background: rgba(120, 90, 200, 0.18);
+}
+
+.table-chip.source-ok {
+  color: #d8ffe8;
+  border-color: rgba(61, 186, 122, 0.3);
+  background: rgba(61, 186, 122, 0.12);
+}
+
+.table-chip.source-fallback {
+  color: #f0e2b8;
+  border-color: rgba(220, 180, 80, 0.28);
+  background: rgba(180, 140, 40, 0.14);
+}
+
+.table-datetime {
+  font-variant-numeric: tabular-nums;
+  color: rgba(239, 232, 248, 0.88);
+}
+
+/* Sticky identity block: checkbox + uid + name + ticker */
+.data-table.with-check .col-uid {
+  left: 2.75rem;
+}
+
+.data-table.with-check .col-name {
+  left: 14.75rem;
+}
+
+.data-table.with-check .col-ticker {
+  left: 26.75rem;
+  box-shadow: 10px 0 14px -10px rgba(0, 0, 0, 0.55);
+}
+
+/* Sticky identity without checkbox column */
+.data-table.with-identity .col-uid {
+  left: 0;
+}
+
+.data-table.with-identity .col-name {
+  left: 12rem;
+}
+
+.data-table.with-identity .col-ticker {
+  left: 24rem;
+  box-shadow: 10px 0 14px -10px rgba(0, 0, 0, 0.55);
+}
+
+.data-table tbody tr.is-clickable {
+  cursor: pointer;
+}
+
+.vtable-row.is-clickable {
+  cursor: pointer;
+}
+
+.data-table tbody tr.has-targets:not(.is-selected) td.col-uid {
+  box-shadow: inset 3px 0 0 rgba(61, 186, 122, 0.7);
+}
+
+@media (max-width: 900px) {
+  .table-scroll {
+    border-radius: 0.65rem;
+  }
+
+  .data-table .sticky-col {
+    position: static;
+    box-shadow: none;
+    max-width: none;
+  }
+}
