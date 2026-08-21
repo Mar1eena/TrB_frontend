@@ -21,10 +21,9 @@ type SortKey =
   | "name"
   | "figi"
   | "uid"
-  | "class_code"
   | "currency"
   | "exchange"
-  | "sector"
+  | "trading_status"
   | "lot"
   | "version"
   | "version_count";
@@ -42,10 +41,9 @@ const COLUMNS: Column[] = [
   { key: "name", label: "name", className: "col-name" },
   { key: "figi", label: "figi", className: "col-figi" },
   { key: "uid", label: "uid", className: "col-uid" },
-  { key: "class_code", label: "class", className: "col-class" },
   { key: "currency", label: "валюта", className: "col-currency" },
   { key: "exchange", label: "биржа", className: "col-exchange" },
-  { key: "sector", label: "сектор", className: "col-sector" },
+  { key: "trading_status", label: "статус торгов", className: "col-trading-status" },
   { key: "lot", label: "лот", className: "col-lot" },
   { key: "version", label: "версия", className: "col-version" },
   { key: "version_count", label: "версий", className: "col-version-count" },
@@ -56,10 +54,9 @@ const EMPTY_FILTERS: Record<SortKey, string> = {
   name: "",
   figi: "",
   uid: "",
-  class_code: "",
   currency: "",
   exchange: "",
-  sector: "",
+  trading_status: "",
   lot: "",
   version: "",
   version_count: "",
@@ -73,10 +70,10 @@ type TableRow = {
   nameL: string;
   figiL: string;
   uidL: string;
-  classL: string;
   currencyL: string;
   exchangeL: string;
-  sectorL: string;
+  tradingStatus: number;
+  tradingStatusText: string;
   lotText: string;
   versionMs: number;
   versionText: string;
@@ -124,10 +121,10 @@ function normalizeRows(items: Instrument[]): TableRow[] {
       nameL: (item.name || "").toLowerCase(),
       figiL: (item.figi || "").toLowerCase(),
       uidL: (item.uid || "").toLowerCase(),
-      classL: (item.class_code || "").toLowerCase(),
       currencyL: (item.currency || "").toLowerCase(),
       exchangeL: (item.exchange || "").toLowerCase(),
-      sectorL: (item.sector || "").toLowerCase(),
+      tradingStatus: item.trading_status,
+      tradingStatusText: (TRADING_STATUS[item.trading_status] ?? String(item.trading_status)).toLowerCase(),
       lotText: String(item.lot ?? ""),
       versionMs: toMs(item.version),
       versionText: formatDateTimeMs(item.version),
@@ -147,14 +144,12 @@ function compareRows(a: TableRow, b: TableRow, key: SortKey): number {
       return a.figiL.localeCompare(b.figiL, "ru");
     case "uid":
       return a.uidL.localeCompare(b.uidL, "ru");
-    case "class_code":
-      return a.classL.localeCompare(b.classL, "ru");
     case "currency":
       return a.currencyL.localeCompare(b.currencyL, "ru");
     case "exchange":
       return a.exchangeL.localeCompare(b.exchangeL, "ru");
-    case "sector":
-      return a.sectorL.localeCompare(b.sectorL, "ru");
+    case "trading_status":
+      return a.tradingStatus - b.tradingStatus;
     case "lot":
       return (a.item.lot ?? 0) - (b.item.lot ?? 0);
     case "version":
@@ -176,14 +171,12 @@ function cellText(row: TableRow, key: SortKey): string {
       return row.figiL;
     case "uid":
       return row.uidL;
-    case "class_code":
-      return row.classL;
     case "currency":
       return row.currencyL;
     case "exchange":
       return row.exchangeL;
-    case "sector":
-      return row.sectorL;
+    case "trading_status":
+      return row.tradingStatusText;
     case "lot":
       return row.lotText;
     case "version":
@@ -274,15 +267,12 @@ const InstrumentRowView = memo(function InstrumentRowView({
       <div className="vtable-cell col-uid mono" title={item.uid}>
         {item.uid}
       </div>
-      <div className="vtable-cell col-class" title={item.class_code}>
-        {item.class_code || "—"}
-      </div>
       <div className="vtable-cell col-currency">{item.currency || "—"}</div>
       <div className="vtable-cell col-exchange" title={item.exchange}>
         {item.exchange || "—"}
       </div>
-      <div className="vtable-cell col-sector" title={item.sector}>
-        {item.sector || "—"}
+      <div className="vtable-cell col-trading-status" title={TRADING_STATUS[item.trading_status] ?? String(item.trading_status)}>
+        {TRADING_STATUS[item.trading_status] ?? String(item.trading_status)}
       </div>
       <div className="vtable-cell col-lot">{item.lot || "—"}</div>
       <div className="vtable-cell col-version table-datetime">{row.versionText}</div>
@@ -763,20 +753,19 @@ export default function InstrumentsPanel() {
       const styles = getComputedStyle(el);
       const rem = Number.parseFloat(styles.fontSize) || 16;
       const available = el.clientWidth;
-      const mins = [8, 14, 10, 12, 6, 5, 8, 8, 4, 12, 5].map((n) => n * rem);
+      const mins = [8, 14, 10, 12, 5, 8, 10, 4, 12, 5].map((n) => n * rem);
       const minTotal = mins.reduce((a, b) => a + b, 0);
       const extra = Math.max(0, available - minTotal);
-      const weights = [0.08, 0.18, 0.1, 0.12, 0.06, 0.05, 0.08, 0.08, 0.04, 0.14, 0.07];
+      const weights = [0.08, 0.2, 0.1, 0.12, 0.05, 0.08, 0.12, 0.04, 0.14, 0.07];
       const sizes = mins.map((min, i) => Math.floor(min + extra * weights[i]));
       const keys = [
         "ticker",
         "name",
         "figi",
         "uid",
-        "class",
         "currency",
         "exchange",
-        "sector",
+        "trading-status",
         "lot",
         "version",
         "version-count",
@@ -806,13 +795,8 @@ export default function InstrumentsPanel() {
 
   return (
     <section className="panel-page history-panel">
-      <header className="scheduler-header">
-        <p className="eyebrow">Сервисы</p>
+      <header className="scheduler-header instruments-header">
         <h1>Инструменты</h1>
-        <p>
-          Справочник акций из <code>TrB.sht</code>. Клик по строке открывает карточку. Версия —
-          дата актуальных реквизитов: при изменении данных из Тинькофф она сдвигается на сегодня.
-        </p>
       </header>
 
       <div className="filters-bar">
