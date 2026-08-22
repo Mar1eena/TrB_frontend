@@ -1,4 +1,4 @@
-import { SignalServiceClient } from "@marleena/trb-proto/tinvest/SignalsServiceClientPb";
+import { SignalServiceClient } from "@marleena/trb-proto/api/tinvest/SignalsServiceClientPb";
 import {
   GetSignalsRequest,
   GetStrategiesRequest,
@@ -7,7 +7,7 @@ import {
   StrategyType,
   type GetSignalsResponse,
   type GetStrategiesResponse,
-} from "@marleena/trb-proto/tinvest/signals_pb";
+} from "@marleena/trb-proto/api/tinvest/signals_pb";
 import { getGrpcBaseUrl } from "../common/client";
 import { globalApiCache, type CacheOptions } from "../common/cache";
 import { toPlain, parseTimestamp, str, num } from "../common/converters";

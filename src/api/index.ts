@@ -8,6 +8,7 @@ export * from "./data";
 export * as testApi from "./test";
 export * from "./test";
 export * as clickhouseManager from "./clickhouse";
+export * as postgresql from "./postgresql";
 export * as scheduler from "./scheduler";
 export * from "./scheduler";
 export * as historicCandle from "./historicCandle";

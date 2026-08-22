@@ -1,4 +1,4 @@
-import * as natsPbModule from "@marleena/trb-proto/api/nats/manager_pb";
+import * as natsPbModule from "@marleena/trb-proto/nats/nats_pb";
 import type {
   AccountInfos,
   Consumer,
@@ -9,7 +9,9 @@ import type {
   StreamConfig,
   StreamInfos,
   StreamName,
-} from "@marleena/trb-proto/api/nats/manager_pb";
+  Strings,
+} from "@marleena/trb-proto/nats/nats_pb";
+import { resolveProtoNs } from "../common/protoNs";
 import type {
   NatsAccount,
   NatsConsumer,
@@ -21,27 +23,9 @@ import type {
 import { num, formatTimestamp, parseTimestamp } from "../common/converters";
 
 export function natsProto(): typeof natsPbModule {
-  const rec = natsPbModule as unknown as Record<string, unknown> & {
-    default?: Record<string, unknown>;
-  };
-  const nested = rec.default;
-  if (typeof rec.JsOpts === "function") return natsPbModule;
-  if (nested && typeof nested.JsOpts === "function") {
-    return nested as unknown as typeof natsPbModule;
-  }
-  const fromGlobal = (
-    globalThis as {
-      proto?: {
-        trb?: {
-          nats?: {
-            manager?: { public?: { contract?: { v1?: typeof natsPbModule } } };
-          };
-        };
-      };
-    }
-  ).proto?.trb?.nats?.manager?.public?.contract?.v1;
-  if (fromGlobal && typeof fromGlobal.JsOpts === "function") return fromGlobal;
-  return natsPbModule;
+  const fromGlobal = (globalThis as { proto?: { trb?: { nats?: { v1?: unknown } } } }).proto?.trb
+    ?.nats?.v1;
+  return resolveProtoNs(natsPbModule, fromGlobal, ["JsOpts", "StreamConfig"]);
 }
 
 export const natsPb = natsProto();
@@ -199,7 +183,7 @@ export function decodeBytes(bytes: Uint8Array): { data: string; base64: boolean 
 
 export function mapMessage(msg: RawStreamMsg): NatsMessage {
   const headers: Record<string, string[]> = {};
-  msg.getHdrsMap().forEach((strings, key) => {
+  msg.getHdrsMap().forEach((strings: Strings, key: string) => {
     headers[key] = strings.getValuesList();
   });
   const decoded = decodeBytes(msg.getData_asU8());

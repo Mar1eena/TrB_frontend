@@ -1,5 +1,5 @@
 import { Timestamp } from "google-protobuf/google/protobuf/timestamp_pb";
-import { MoneyValue, Quotation } from "@marleena/trb-proto/tinvest/common_pb";
+import { MoneyValue, Quotation } from "@marleena/trb-proto/api/tinvest/common_pb";
 
 export function toPlain(message: { toObject: (includeInstance?: boolean) => object }): Record<string, unknown> {
   return snakeKeys(message.toObject(false)) as Record<string, unknown>;

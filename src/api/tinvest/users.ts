@@ -1,4 +1,4 @@
-import { UsersServiceClient } from "@marleena/trb-proto/tinvest/UsersServiceClientPb";
+import { UsersServiceClient } from "@marleena/trb-proto/api/tinvest/UsersServiceClientPb";
 import {
   AccountStatus,
   CurrencyTransferRequest,
@@ -18,8 +18,8 @@ import {
   type CurrencyTransferResponse,
   type PayInResponse,
   type GetAccountValuesResponse,
-} from "@marleena/trb-proto/tinvest/users_pb";
-import { MoneyValue } from "@marleena/trb-proto/tinvest/common_pb";
+} from "@marleena/trb-proto/api/tinvest/users_pb";
+import { MoneyValue } from "@marleena/trb-proto/api/tinvest/common_pb";
 import { getGrpcBaseUrl } from "../common/client";
 import { globalApiCache, type CacheOptions } from "../common/cache";
 import { toPlain, parseMoney, str, toMoneyValue } from "../common/converters";

@@ -1,4 +1,4 @@
-import { NatsJetStreamManagerClient } from "@marleena/trb-proto/api/nats/ManagerServiceClientPb";
+import { Nats_AdminClient } from "@marleena/trb-proto/nats/NatsServiceClientPb";
 import { getGrpcBaseUrl } from "../common/client";
 import { globalApiCache } from "../common/cache";
 import { isAbsentMessage } from "../common/errors";
@@ -25,7 +25,7 @@ import type {
   NatsStreamWrite,
 } from "./types";
 
-export const natsClient = new NatsJetStreamManagerClient(getGrpcBaseUrl());
+export const natsClient = new Nats_AdminClient(getGrpcBaseUrl());
 
 export async function fetchAccount(opts?: NatsFetchOpts): Promise<NatsAccount> {
   return globalApiCache.read("nats:account", async () => mapAccount(await natsClient.accountInfo(new natsPb.JsOpts())), opts);

@@ -1,11 +1,12 @@
 import { useNotify } from "../notifications";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  DB_API_GRPC_METHODS,
-  callDbApiGrpc,
-  defaultDbApiRequestBody,
+  DATA_API_GRPC_METHODS,
+  callDataApiGrpc,
+  dataApiServiceName,
+  defaultDataApiRequestBody,
   prettyJson,
-  type DbApiGrpcMethod,
+  type DataApiGrpcMethod,
 } from "../api/data/debug";
 import { TinvestRpcError } from "../api/common/errors";
 import "./GrpcDebugPanel.css";
@@ -60,24 +61,24 @@ function saveHistory(items: HistoryItem[]) {
   }
 }
 
-function isMethod(value: string): value is DbApiGrpcMethod {
-  return DB_API_GRPC_METHODS.some((item) => item.value === value);
+function isMethod(value: string): value is DataApiGrpcMethod {
+  return DATA_API_GRPC_METHODS.some((item) => item.value === value);
 }
 
-function initialMethod(): DbApiGrpcMethod {
+function initialMethod(): DataApiGrpcMethod {
   const stored = readStorage(STORAGE_METHOD);
   return isMethod(stored) ? stored : "ListInstruments";
 }
 
-function initialBody(method: DbApiGrpcMethod): string {
+function initialBody(method: DataApiGrpcMethod): string {
   const stored = readStorage(STORAGE_BODY + method);
   if (stored.trim()) return stored;
-  return prettyJson(defaultDbApiRequestBody(method));
+  return prettyJson(defaultDataApiRequestBody(method));
 }
 
 export default function DataApiDebugPanel() {
   const notify = useNotify();
-  const [method, setMethod] = useState<DbApiGrpcMethod>(initialMethod);
+  const [method, setMethod] = useState<DataApiGrpcMethod>(initialMethod);
   const [bodyText, setBodyText] = useState(() => initialBody(initialMethod()));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -87,12 +88,12 @@ export default function DataApiDebugPanel() {
   const [history, setHistory] = useState<HistoryItem[]>(loadHistory);
 
   const meta = useMemo(
-    () => DB_API_GRPC_METHODS.find((item) => item.value === method),
+    () => DATA_API_GRPC_METHODS.find((item) => item.value === method),
     [method],
   );
 
   const applyMethod = useCallback(
-    (nextMethod: DbApiGrpcMethod) => {
+    (nextMethod: DataApiGrpcMethod) => {
       writeStorage(STORAGE_BODY + method, bodyText);
       setMethod(nextMethod);
       setBodyText(initialBody(nextMethod));
@@ -108,7 +109,7 @@ export default function DataApiDebugPanel() {
   }, [bodyText, method]);
 
   const resetBody = () => {
-    const next = prettyJson(defaultDbApiRequestBody(method));
+    const next = prettyJson(defaultDataApiRequestBody(method));
     setBodyText(next);
     writeStorage(STORAGE_BODY + method, next);
   };
@@ -142,7 +143,7 @@ export default function DataApiDebugPanel() {
     }
     if (meta?.write) {
       const ok = window.confirm(
-        `DbApi/${method} — метод записи. Отправить реальный запрос?`,
+        `${dataApiServiceName(method)}/${method} — метод записи. Отправить реальный запрос?`,
       );
       if (!ok) return;
     }
@@ -151,7 +152,7 @@ export default function DataApiDebugPanel() {
     setElapsedMs(null);
     const started = performance.now();
     try {
-      const data = await callDbApiGrpc(method, request);
+      const data = await callDataApiGrpc(method, request);
       const ms = Math.round(performance.now() - started);
       setElapsedMs(ms);
       setPayload(data);
@@ -211,14 +212,14 @@ export default function DataApiDebugPanel() {
         <p className="eyebrow">Админка / API</p>
         <h1>Data API</h1>
         <p>
-          Unary-запросы к <code>DbApi</code> через Envoy (gRPC-web): ClickHouse и Postgres.
+          Unary-запросы к <code>ClickHouse</code> и <code>PostgreSQL</code> через Envoy (gRPC-web).
           Тело — JSON в snake_case. Ctrl+Enter отправляет запрос.
         </p>
       </header>
 
       <div className="filters-bar">
         <div className="debug-services">
-          {DB_API_GRPC_METHODS.map((item) => (
+          {DATA_API_GRPC_METHODS.map((item) => (
             <button
               key={item.value}
               type="button"
@@ -243,7 +244,7 @@ export default function DataApiDebugPanel() {
             Шаблон
           </button>
           <div className="debug-meta">
-            <span className="mono">DbApi/{method}</span>
+            <span className="mono">{dataApiServiceName(method)}/{method}</span>
             {elapsedMs != null ? <span>{elapsedMs} мс</span> : null}
             {meta?.write ? <span className="warn">запись</span> : null}
             {parseError ? <span className="err">{parseError}</span> : null}

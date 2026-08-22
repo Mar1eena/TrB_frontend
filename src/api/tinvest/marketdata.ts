@@ -1,4 +1,4 @@
-import { MarketDataServiceClient } from "@marleena/trb-proto/tinvest/MarketdataServiceClientPb";
+import { MarketDataServiceClient } from "@marleena/trb-proto/api/tinvest/MarketdataServiceClientPb";
 import {
   CandleInterval,
   CandleSource,
@@ -21,7 +21,7 @@ import {
   type GetTechAnalysisResponse,
   type GetTradingStatusResponse,
   type GetTradingStatusesResponse,
-} from "@marleena/trb-proto/tinvest/marketdata_pb";
+} from "@marleena/trb-proto/api/tinvest/marketdata_pb";
 import { getGrpcBaseUrl } from "../common/client";
 import { globalApiCache, type CacheOptions } from "../common/cache";
 import { toPlain, parseTimestamp, str, num } from "../common/converters";

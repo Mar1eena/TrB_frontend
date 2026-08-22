@@ -1,11 +1,11 @@
 import type { ClientReadableStream, RpcError, Status } from "grpc-web";
-import { OrdersStreamServiceClient } from "@marleena/trb-proto/tinvest/OrdersServiceClientPb";
+import { OrdersStreamServiceClient } from "@marleena/trb-proto/api/tinvest/OrdersServiceClientPb";
 import {
   OrderStateStreamRequest,
   TradesStreamRequest,
   type OrderStateStreamResponse,
   type TradesStreamResponse,
-} from "@marleena/trb-proto/tinvest/orders_pb";
+} from "@marleena/trb-proto/api/tinvest/orders_pb";
 import { getGrpcBaseUrl } from "../common/client";
 import { wrapRpcError } from "../common/errors";
 import type { StreamSubscription, StreamSubscriptionCallbacks } from "./marketdataStream";

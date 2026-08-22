@@ -1,53 +1,30 @@
-import { ClickHouseManagerClient } from "@marleena/trb-proto/api/clickhouse/ManagerServiceClientPb";
-import * as chMgrPbModule from "@marleena/trb-proto/api/clickhouse/manager_pb";
+import { ClickHouse_AdminClient } from "@marleena/trb-proto/clickhouse/AdminServiceClientPb";
+import { ClickHouseClient } from "@marleena/trb-proto/clickhouse/ClickhouseServiceClientPb";
+import * as chAdminPbModule from "@marleena/trb-proto/clickhouse/admin_pb";
+import * as chPbModule from "@marleena/trb-proto/clickhouse/clickhouse_pb";
 import { getGrpcBaseUrl } from "../common/client";
+import { resolveProtoNs } from "../common/protoNs";
 
-type PbNs = Record<string, unknown>;
-
-function asPbNs(value: unknown): PbNs | null {
-  if (!value || typeof value !== "object") return null;
-  return value as PbNs;
+function clickhouseGlobalNs(): unknown {
+  return (globalThis as { proto?: { trb?: { clickhouse?: { v1?: unknown } } } }).proto?.trb
+    ?.clickhouse?.v1;
 }
 
-function hasCtor(ns: PbNs | null, name: string): boolean {
-  return !!ns && typeof ns[name] === "function";
+export function clickhouseAdminProto(): typeof chAdminPbModule {
+  return resolveProtoNs(chAdminPbModule, clickhouseGlobalNs(), [
+    "ListDatabasesRequest",
+    "TableOptionsRequest",
+  ]);
 }
 
-/**
- * google-protobuf CJS builds expose constructors either as named ESM bindings,
- * on `default`, or via goog.exportSymbol on globalThis. Prefer a namespace that
- * includes the newest messages (e.g. TableOptionsRequest), not a stale global.
- */
-export function clickhouseManagerProto(): typeof chMgrPbModule {
-  const rec = chMgrPbModule as unknown as PbNs & { default?: unknown };
-  const fromGlobal = asPbNs(
-    (
-      globalThis as {
-        proto?: {
-          trb?: {
-            clickhouse?: {
-              manager?: { public?: { contract?: { v1?: unknown } } };
-            };
-          };
-        };
-      }
-    ).proto?.trb?.clickhouse?.manager?.public?.contract?.v1,
-  );
-
-  const candidates = [asPbNs(rec.default), asPbNs(rec), fromGlobal].filter(Boolean) as PbNs[];
-
-  for (const ns of candidates) {
-    if (hasCtor(ns, "ListDatabasesRequest") && hasCtor(ns, "TableOptionsRequest")) {
-      return ns as unknown as typeof chMgrPbModule;
-    }
-  }
-  for (const ns of candidates) {
-    if (hasCtor(ns, "ListDatabasesRequest")) {
-      return ns as unknown as typeof chMgrPbModule;
-    }
-  }
-  return chMgrPbModule;
+export function clickhouseProto(): typeof chPbModule {
+  return resolveProtoNs(chPbModule, clickhouseGlobalNs(), [
+    "ListInstrumentsRequest",
+    "ListFilter",
+  ]);
 }
 
-export const chMgrPb = clickhouseManagerProto();
-export const clickhouseManagerClient = new ClickHouseManagerClient(getGrpcBaseUrl());
+export const chAdminPb = clickhouseAdminProto();
+export const chPb = clickhouseProto();
+export const clickhouseAdminClient = new ClickHouse_AdminClient(getGrpcBaseUrl());
+export const clickhouseClient = new ClickHouseClient(getGrpcBaseUrl());

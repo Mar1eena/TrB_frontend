@@ -1,13 +1,19 @@
-import { dbApiClient, dbApiPb, dbApiProto } from "./client";
+import { clickhouseClient, chPb } from "../clickhouse/client";
+import { postgresqlClient, pgPb } from "../postgresql/client";
 import { formatTimestamp, quotationToNumber } from "../common/converters";
-import type { Share } from "@marleena/trb-proto/tinvest/instruments_pb";
-import type { SchedulerTarget, LastDownload } from "@marleena/trb-proto/api/db_api/db_api_pb";
+import type { Share } from "@marleena/trb-proto/api/tinvest/instruments_pb";
+import type { SchedulerTarget } from "@marleena/trb-proto/postgresql/postgresql_pb";
+import type { LastDownload } from "@marleena/trb-proto/clickhouse/clickhouse_pb";
 
-export * from "./client";
 export {
+  DATA_API_GRPC_METHODS,
   DB_API_GRPC_METHODS,
+  callDataApiGrpc,
   callDbApiGrpc,
+  dataApiServiceName,
+  defaultDataApiRequestBody,
   defaultDbApiRequestBody,
+  type DataApiGrpcMethod,
   type DbApiGrpcMethod,
 } from "./debug";
 
@@ -32,7 +38,7 @@ function coalesce<T>(key: string, run: () => Promise<T>): Promise<T> {
 }
 
 function newFilter(q: string, limit: number) {
-  const filter = new dbApiPb.ListFilter();
+  const filter = new chPb.ListFilter();
   if (q.trim()) filter.setQ(q.trim());
   if (limit > 0) filter.setLimit(limit);
   return filter;
@@ -163,11 +169,11 @@ export async function listInstruments(
   const lite = opts?.lite === true;
   const key = `ListInstruments:${q.trim()}:${limit}:${lite ? 1 : 0}`;
   return coalesce(key, async () => {
-    const req = new dbApiPb.ListInstrumentsRequest();
+    const req = new chPb.ListInstrumentsRequest();
     req.setFilter(newFilter(q, limit));
     if (lite) req.setLite(true);
     try {
-      const resp = await dbApiClient.listInstruments(req);
+      const resp = await clickhouseClient.listInstruments(req);
       return resp.getItemsList().flatMap((row) => {
         const share = row.getShare();
         if (!share) return [];
@@ -187,11 +193,10 @@ export async function listInstruments(
 export async function listInstrumentVersions(uid: string): Promise<Instrument[]> {
   const key = `ListInstrumentVersions:${uid.trim()}`;
   return coalesce(key, async () => {
-    const Pb = dbApiProto();
-    const req = new Pb.ListInstrumentVersionsRequest();
+    const req = new chPb.ListInstrumentVersionsRequest();
     req.setUid(uid.trim());
     try {
-      const resp = await dbApiClient.listInstrumentVersions(req);
+      const resp = await clickhouseClient.listInstrumentVersions(req);
       return resp.getItemsList().flatMap((row) => {
         const share = row.getShare();
         if (!share) return [];
@@ -210,8 +215,8 @@ export async function listInstrumentVersions(uid: string): Promise<Instrument[]>
 export async function listSchedulerTargets() {
   return coalesce("ListSchedulerTargets", async () => {
     try {
-      const resp = await dbApiClient.listSchedulerTargets(
-        new dbApiPb.ListSchedulerTargetsRequest(),
+      const resp = await postgresqlClient.listSchedulerTargets(
+        new pgPb.ListSchedulerTargetsRequest(),
       );
       return resp.getItemsList().map((item: SchedulerTarget) => ({
         uid: item.getUid(),
@@ -234,16 +239,16 @@ export async function syncSchedulerTargets(
   opts?: { allowEmpty?: boolean },
 ): Promise<void> {
   const allowEmpty = opts?.allowEmpty === true || instruments.length === 0;
-  const req = new dbApiPb.SyncSchedulerTargetsRequest();
+  const req = new pgPb.SyncSchedulerTargetsRequest();
   req.setAllowEmpty(allowEmpty);
   for (const inst of instruments) {
-    const row = new dbApiPb.SchedulerTargetInstrument();
+    const row = new pgPb.SchedulerTargetInstrument();
     row.setUid(inst.uid);
     row.setIntervalsList(inst.intervals);
     req.addInstruments(row);
   }
   try {
-    await dbApiClient.syncSchedulerTargets(req);
+    await postgresqlClient.syncSchedulerTargets(req);
   } catch (err) {
     throw grpcError(err, "Не удалось сохранить изменения");
   }
@@ -255,10 +260,10 @@ export async function listLastDownloads(
 ) {
   const key = `ListLastDownloads:${q.trim()}:${limit}`;
   return coalesce(key, async () => {
-    const req = new dbApiPb.ListLastDownloadsRequest();
+    const req = new chPb.ListLastDownloadsRequest();
     req.setFilter(newFilter(q, limit));
     try {
-      const resp = await dbApiClient.listLastDownloads(req);
+      const resp = await clickhouseClient.listLastDownloads(req);
       return resp.getItemsList().map((item: LastDownload) => ({
         uid: item.getUid(),
         figi: item.getFigi(),

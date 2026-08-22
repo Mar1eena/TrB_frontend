@@ -1,4 +1,4 @@
-import { OrdersServiceClient } from "@marleena/trb-proto/tinvest/OrdersServiceClientPb";
+import { OrdersServiceClient } from "@marleena/trb-proto/api/tinvest/OrdersServiceClientPb";
 import {
   CancelOrderRequest,
   GetMaxLotsRequest,
@@ -19,8 +19,8 @@ import {
   type OrderState,
   type PostOrderAsyncResponse,
   type PostOrderResponse,
-} from "@marleena/trb-proto/tinvest/orders_pb";
-import { PriceType, type Quotation } from "@marleena/trb-proto/tinvest/common_pb";
+} from "@marleena/trb-proto/api/tinvest/orders_pb";
+import { PriceType, type Quotation } from "@marleena/trb-proto/api/tinvest/common_pb";
 import { getGrpcBaseUrl } from "../common/client";
 import { globalApiCache, type CacheOptions } from "../common/cache";
 import { toPlain, toQuotation, str, num } from "../common/converters";

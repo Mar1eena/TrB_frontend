@@ -23,7 +23,7 @@ Dev-сервер: http://localhost:3002
 
 | Путь | Куда |
 |---|---|
-| gRPC-Web / JSON (`/trb.*`, `/tinkoff.*`, `/v1/test`) | Envoy `http://127.0.0.1:8081` |
+| gRPC-Web / JSON (`/trb.*`, `/tinkoff.*`, `/v1`) | Envoy `http://127.0.0.1:8081` |
 | WebSocket `/ws` | Gateway `http://127.0.0.1:9092` |
 
 ## Скрипты

@@ -1,4 +1,4 @@
-import { InstrumentsServiceClient } from "@marleena/trb-proto/tinvest/InstrumentsServiceClientPb";
+import { InstrumentsServiceClient } from "@marleena/trb-proto/api/tinvest/InstrumentsServiceClientPb";
 import {
   AssetRequest,
   AssetsRequest,
@@ -48,8 +48,8 @@ import {
   type ShareResponse,
   type SharesResponse,
   type TradingSchedulesResponse,
-} from "@marleena/trb-proto/tinvest/instruments_pb";
-import { InstrumentStatus, InstrumentType } from "@marleena/trb-proto/tinvest/common_pb";
+} from "@marleena/trb-proto/api/tinvest/instruments_pb";
+import { InstrumentStatus, InstrumentType } from "@marleena/trb-proto/api/tinvest/common_pb";
 import { getGrpcBaseUrl } from "../common/client";
 import { globalApiCache, type CacheOptions } from "../common/cache";
 import { toPlain, parseTimestamp, str, num, bool } from "../common/converters";

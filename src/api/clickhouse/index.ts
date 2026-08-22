@@ -1,6 +1,6 @@
 import { wrapRpcError } from "../common/errors";
 import { formatTimestamp } from "../common/converters";
-import { chMgrPb, clickhouseManagerClient } from "./client";
+import { chAdminPb, clickhouseAdminClient } from "./client";
 
 export * from "./client";
 
@@ -128,7 +128,7 @@ function coalesce<T>(key: string, run: () => Promise<T>): Promise<T> {
   return pending;
 }
 
-function columnFromPb(col: InstanceType<typeof chMgrPb.Column>): ChColumn {
+function columnFromPb(col: InstanceType<typeof chAdminPb.Column>): ChColumn {
   return {
     name: col.getName(),
     type: col.getType(),
@@ -140,7 +140,7 @@ function columnFromPb(col: InstanceType<typeof chMgrPb.Column>): ChColumn {
   };
 }
 
-function tableFromPb(item: InstanceType<typeof chMgrPb.Table>): ChTable {
+function tableFromPb(item: InstanceType<typeof chAdminPb.Table>): ChTable {
   return {
     database: item.getDatabase(),
     name: item.getName(),
@@ -160,7 +160,7 @@ function tableFromPb(item: InstanceType<typeof chMgrPb.Table>): ChTable {
 }
 
 function columnToPb(src: ChColumnWrite) {
-  const col = new chMgrPb.Column();
+  const col = new chAdminPb.Column();
   col.setName(src.name.trim());
   col.setType(src.type.trim());
   if (src.default_kind) col.setDefaultKind(src.default_kind.trim());
@@ -173,7 +173,7 @@ function columnToPb(src: ChColumnWrite) {
 
 export async function pingClickHouse() {
   try {
-    const resp = await clickhouseManagerClient.ping(new chMgrPb.PingRequest());
+    const resp = await clickhouseAdminClient.ping(new chAdminPb.PingRequest());
     return { ok: resp.getOk(), version: resp.getVersion() };
   } catch (err) {
     throw grpcError(err, "Не удалось выполнить ping ClickHouse");
@@ -183,7 +183,7 @@ export async function pingClickHouse() {
 export async function fetchClickHouseInfo(): Promise<ChServerInfo> {
   return coalesce("ServerInfo", async () => {
     try {
-      const resp = await clickhouseManagerClient.serverInfo(new chMgrPb.ServerInfoRequest());
+      const resp = await clickhouseAdminClient.serverInfo(new chAdminPb.ServerInfoRequest());
       return {
         version: resp.getVersion(),
         display_name: resp.getDisplayName(),
@@ -200,10 +200,10 @@ export async function fetchClickHouseInfo(): Promise<ChServerInfo> {
 export async function listDatabases(like = ""): Promise<ChDatabase[]> {
   const key = `ListDatabases:${like.trim()}`;
   return coalesce(key, async () => {
-    const req = new chMgrPb.ListDatabasesRequest();
+    const req = new chAdminPb.ListDatabasesRequest();
     if (like.trim()) req.setLike(like.trim());
     try {
-      const resp = await clickhouseManagerClient.listDatabases(req);
+      const resp = await clickhouseAdminClient.listDatabases(req);
       return resp.getItemsList().map((item) => ({
         name: item.getName(),
         engine: item.getEngine(),
@@ -224,13 +224,13 @@ export async function createDatabase(spec: {
   comment?: string;
   if_not_exists?: boolean;
 }) {
-  const req = new chMgrPb.DatabaseSpec();
+  const req = new chAdminPb.DatabaseSpec();
   req.setName(spec.name.trim());
   if (spec.engine) req.setEngine(spec.engine.trim());
   if (spec.comment) req.setComment(spec.comment.trim());
   if (spec.if_not_exists) req.setIfNotExists(true);
   try {
-    const resp = await clickhouseManagerClient.createDatabase(req);
+    const resp = await clickhouseAdminClient.createDatabase(req);
     if (!resp.getSuccess()) throw new Error(resp.getMessage() || "не удалось создать базу");
   } catch (err) {
     throw grpcError(err, "Не удалось создать базу");
@@ -238,12 +238,12 @@ export async function createDatabase(spec: {
 }
 
 export async function dropDatabase(name: string, opts?: { if_exists?: boolean; sync?: boolean }) {
-  const req = new chMgrPb.DatabaseName();
+  const req = new chAdminPb.DatabaseName();
   req.setName(name.trim());
   if (opts?.if_exists) req.setIfExists(true);
   if (opts?.sync) req.setSync(true);
   try {
-    const resp = await clickhouseManagerClient.dropDatabase(req);
+    const resp = await clickhouseAdminClient.dropDatabase(req);
     if (!resp.getSuccess()) throw new Error(resp.getMessage() || "не удалось удалить базу");
   } catch (err) {
     throw grpcError(err, "Не удалось удалить базу");
@@ -251,11 +251,11 @@ export async function dropDatabase(name: string, opts?: { if_exists?: boolean; s
 }
 
 export async function listTables(database: string, like = ""): Promise<ChTable[]> {
-  const req = new chMgrPb.ListTablesRequest();
+  const req = new chAdminPb.ListTablesRequest();
   req.setDatabase(database.trim());
   if (like.trim()) req.setLike(like.trim());
   try {
-    const resp = await clickhouseManagerClient.listTables(req);
+    const resp = await clickhouseAdminClient.listTables(req);
     return resp.getItemsList().map(tableFromPb);
   } catch (err) {
     throw grpcError(err, "Не удалось загрузить список таблиц");
@@ -263,11 +263,11 @@ export async function listTables(database: string, like = ""): Promise<ChTable[]
 }
 
 export async function fetchTableInfo(database: string, name: string): Promise<ChTable> {
-  const req = new chMgrPb.TableName();
+  const req = new chAdminPb.TableName();
   req.setDatabase(database.trim());
   req.setName(name.trim());
   try {
-    return tableFromPb(await clickhouseManagerClient.tableInfo(req));
+    return tableFromPb(await clickhouseAdminClient.tableInfo(req));
   } catch (err) {
     throw grpcError(err, "Не удалось получить таблицу");
   }
@@ -288,11 +288,11 @@ export async function createTable(spec: {
   settings?: Record<string, string>;
   if_not_exists?: boolean;
 }) {
-  const req = new chMgrPb.TableSpec();
+  const req = new chAdminPb.TableSpec();
   req.setDatabase(spec.database.trim());
   req.setName(spec.name.trim());
   for (const col of spec.columns) req.addColumns(columnToPb(col));
-  const engine = new chMgrPb.TableEngine();
+  const engine = new chAdminPb.TableEngine();
   engine.setName(spec.engine.trim());
   if (spec.engine_params?.length) engine.setParamsList(spec.engine_params);
   req.setEngine(engine);
@@ -310,7 +310,7 @@ export async function createTable(spec: {
   }
   if (spec.if_not_exists) req.setIfNotExists(true);
   try {
-    const resp = await clickhouseManagerClient.createTable(req);
+    const resp = await clickhouseAdminClient.createTable(req);
     if (!resp.getSuccess()) throw new Error(resp.getMessage() || "не удалось создать таблицу");
   } catch (err) {
     throw grpcError(err, "Не удалось создать таблицу");
@@ -318,13 +318,13 @@ export async function createTable(spec: {
 }
 
 export async function dropTable(database: string, name: string, opts?: { if_exists?: boolean; sync?: boolean }) {
-  const req = new chMgrPb.TableName();
+  const req = new chAdminPb.TableName();
   req.setDatabase(database.trim());
   req.setName(name.trim());
   if (opts?.if_exists) req.setIfExists(true);
   if (opts?.sync) req.setSync(true);
   try {
-    const resp = await clickhouseManagerClient.dropTable(req);
+    const resp = await clickhouseAdminClient.dropTable(req);
     if (!resp.getSuccess()) throw new Error(resp.getMessage() || "не удалось удалить таблицу");
   } catch (err) {
     throw grpcError(err, "Не удалось удалить таблицу");
@@ -332,11 +332,11 @@ export async function dropTable(database: string, name: string, opts?: { if_exis
 }
 
 export async function truncateTable(database: string, name: string) {
-  const req = new chMgrPb.TableName();
+  const req = new chAdminPb.TableName();
   req.setDatabase(database.trim());
   req.setName(name.trim());
   try {
-    const resp = await clickhouseManagerClient.truncateTable(req);
+    const resp = await clickhouseAdminClient.truncateTable(req);
     if (!resp.getSuccess()) throw new Error(resp.getMessage() || "не удалось очистить таблицу");
   } catch (err) {
     throw grpcError(err, "Не удалось очистить таблицу");
@@ -344,13 +344,13 @@ export async function truncateTable(database: string, name: string) {
 }
 
 export async function renameTable(database: string, name: string, newName: string, newDatabase?: string) {
-  const req = new chMgrPb.RenameTableRequest();
+  const req = new chAdminPb.RenameTableRequest();
   req.setDatabase(database.trim());
   req.setName(name.trim());
   req.setNewName(newName.trim());
   if (newDatabase?.trim()) req.setNewDatabase(newDatabase.trim());
   try {
-    const resp = await clickhouseManagerClient.renameTable(req);
+    const resp = await clickhouseAdminClient.renameTable(req);
     if (!resp.getSuccess()) throw new Error(resp.getMessage() || "не удалось переименовать таблицу");
   } catch (err) {
     throw grpcError(err, "Не удалось переименовать таблицу");
@@ -358,14 +358,14 @@ export async function renameTable(database: string, name: string, newName: strin
 }
 
 export async function optimizeTable(database: string, name: string, opts?: { partition?: string; final?: boolean; deduplicate?: boolean }) {
-  const req = new chMgrPb.OptimizeTableRequest();
+  const req = new chAdminPb.OptimizeTableRequest();
   req.setDatabase(database.trim());
   req.setName(name.trim());
   if (opts?.partition) req.setPartition(opts.partition.trim());
   if (opts?.final) req.setFinal(true);
   if (opts?.deduplicate) req.setDeduplicate(true);
   try {
-    const resp = await clickhouseManagerClient.optimizeTable(req);
+    const resp = await clickhouseAdminClient.optimizeTable(req);
     if (!resp.getSuccess()) throw new Error(resp.getMessage() || "не удалось оптимизировать таблицу");
   } catch (err) {
     throw grpcError(err, "Не удалось оптимизировать таблицу");
@@ -378,14 +378,14 @@ export async function addColumn(
   column: ChColumnWrite,
   opts?: { after?: string; if_not_exists?: boolean },
 ) {
-  const req = new chMgrPb.AddColumnRequest();
+  const req = new chAdminPb.AddColumnRequest();
   req.setDatabase(database.trim());
   req.setTable(table.trim());
   req.setColumn(columnToPb(column));
   if (opts?.after) req.setAfter(opts.after.trim());
   if (opts?.if_not_exists) req.setIfNotExists(true);
   try {
-    const resp = await clickhouseManagerClient.addColumn(req);
+    const resp = await clickhouseAdminClient.addColumn(req);
     if (!resp.getSuccess()) throw new Error(resp.getMessage() || "не удалось добавить колонку");
   } catch (err) {
     throw grpcError(err, "Не удалось добавить колонку");
@@ -393,13 +393,13 @@ export async function addColumn(
 }
 
 export async function dropColumn(database: string, table: string, name: string, opts?: { if_exists?: boolean }) {
-  const req = new chMgrPb.DropColumnRequest();
+  const req = new chAdminPb.DropColumnRequest();
   req.setDatabase(database.trim());
   req.setTable(table.trim());
   req.setName(name.trim());
   if (opts?.if_exists) req.setIfExists(true);
   try {
-    const resp = await clickhouseManagerClient.dropColumn(req);
+    const resp = await clickhouseAdminClient.dropColumn(req);
     if (!resp.getSuccess()) throw new Error(resp.getMessage() || "не удалось удалить колонку");
   } catch (err) {
     throw grpcError(err, "Не удалось удалить колонку");
@@ -407,13 +407,13 @@ export async function dropColumn(database: string, table: string, name: string, 
 }
 
 export async function renameColumn(database: string, table: string, name: string, newName: string) {
-  const req = new chMgrPb.RenameColumnRequest();
+  const req = new chAdminPb.RenameColumnRequest();
   req.setDatabase(database.trim());
   req.setTable(table.trim());
   req.setName(name.trim());
   req.setNewName(newName.trim());
   try {
-    const resp = await clickhouseManagerClient.renameColumn(req);
+    const resp = await clickhouseAdminClient.renameColumn(req);
     if (!resp.getSuccess()) throw new Error(resp.getMessage() || "не удалось переименовать колонку");
   } catch (err) {
     throw grpcError(err, "Не удалось переименовать колонку");
@@ -421,12 +421,12 @@ export async function renameColumn(database: string, table: string, name: string
 }
 
 export async function modifyColumn(database: string, table: string, column: ChColumnWrite) {
-  const req = new chMgrPb.ModifyColumnRequest();
+  const req = new chAdminPb.ModifyColumnRequest();
   req.setDatabase(database.trim());
   req.setTable(table.trim());
   req.setColumn(columnToPb(column));
   try {
-    const resp = await clickhouseManagerClient.modifyColumn(req);
+    const resp = await clickhouseAdminClient.modifyColumn(req);
     if (!resp.getSuccess()) throw new Error(resp.getMessage() || "не удалось изменить колонку");
   } catch (err) {
     throw grpcError(err, "Не удалось изменить колонку");
@@ -434,12 +434,12 @@ export async function modifyColumn(database: string, table: string, column: ChCo
 }
 
 export async function executeClickHouseQuery(query: string, maxRows = 100, database?: string): Promise<ChQueryResult> {
-  const req = new chMgrPb.ExecuteQueryRequest();
+  const req = new chAdminPb.ExecuteQueryRequest();
   req.setQuery(query.trim());
   if (maxRows > 0) req.setMaxRows(maxRows);
   if (database?.trim()) req.setDatabase(database.trim());
   try {
-    const resp = await clickhouseManagerClient.executeQuery(req);
+    const resp = await clickhouseAdminClient.executeQuery(req);
     return {
       columns: resp.getColumnsList(),
       types: resp.getTypesList(),
@@ -462,7 +462,7 @@ export async function previewTableData(params: {
   order_by?: string;
   where?: string;
 }): Promise<ChQueryResult> {
-  const req = new chMgrPb.PreviewTableDataRequest();
+  const req = new chAdminPb.PreviewTableDataRequest();
   req.setDatabase(params.database.trim());
   req.setTable(params.table.trim());
   if (params.limit) req.setLimit(params.limit);
@@ -470,7 +470,7 @@ export async function previewTableData(params: {
   if (params.order_by) req.setOrderBy(params.order_by.trim());
   if (params.where) req.setWhere(params.where.trim());
   try {
-    const resp = await clickhouseManagerClient.previewTableData(req);
+    const resp = await clickhouseAdminClient.previewTableData(req);
     return {
       columns: resp.getColumnsList(),
       types: resp.getTypesList(),
@@ -486,12 +486,12 @@ export async function previewTableData(params: {
 }
 
 export async function listParts(database: string, table: string, activeOnly = true): Promise<ChTablePart[]> {
-  const req = new chMgrPb.ListPartsRequest();
+  const req = new chAdminPb.ListPartsRequest();
   req.setDatabase(database.trim());
   req.setTable(table.trim());
   req.setActiveOnly(activeOnly);
   try {
-    const resp = await clickhouseManagerClient.listParts(req);
+    const resp = await clickhouseAdminClient.listParts(req);
     return resp.getItemsList().map((p) => ({
       partition: p.getPartition(),
       name: p.getName(),
@@ -510,13 +510,13 @@ export async function listParts(database: string, table: string, activeOnly = tr
 }
 
 export async function dropPartition(database: string, table: string, partition: string, detach = false) {
-  const req = new chMgrPb.DropPartitionRequest();
+  const req = new chAdminPb.DropPartitionRequest();
   req.setDatabase(database.trim());
   req.setTable(table.trim());
   req.setPartition(partition.trim());
   if (detach) req.setDetach(true);
   try {
-    const resp = await clickhouseManagerClient.dropPartition(req);
+    const resp = await clickhouseAdminClient.dropPartition(req);
     if (!resp.getSuccess()) throw new Error(resp.getMessage() || "не удалось выполнить операцию с партицией");
   } catch (err) {
     throw grpcError(err, "Не удалось выполнить операцию с партицией");
@@ -525,9 +525,9 @@ export async function dropPartition(database: string, table: string, partition: 
 
 export async function listProcesses(): Promise<ChProcess[]> {
   return coalesce("ListProcesses", async () => {
-    const req = new chMgrPb.ListProcessesRequest();
+    const req = new chAdminPb.ListProcessesRequest();
     try {
-      const resp = await clickhouseManagerClient.listProcesses(req);
+      const resp = await clickhouseAdminClient.listProcesses(req);
       return resp.getItemsList().map((p) => ({
         query_id: p.getQueryId(),
         user: p.getUser(),
@@ -547,10 +547,10 @@ export async function listProcesses(): Promise<ChProcess[]> {
 }
 
 export async function killProcess(queryId: string) {
-  const req = new chMgrPb.KillProcessRequest();
+  const req = new chAdminPb.KillProcessRequest();
   req.setQueryId(queryId.trim());
   try {
-    const resp = await clickhouseManagerClient.killProcess(req);
+    const resp = await clickhouseAdminClient.killProcess(req);
     if (!resp.getSuccess()) throw new Error(resp.getMessage() || "не удалось завершить процесс");
   } catch (err) {
     throw grpcError(err, "Не удалось завершить процесс");
@@ -559,9 +559,9 @@ export async function killProcess(queryId: string) {
 
 export async function listDisks(): Promise<ChDisk[]> {
   return coalesce("ListDisks", async () => {
-    const req = new chMgrPb.ListDisksRequest();
+    const req = new chAdminPb.ListDisksRequest();
     try {
-      const resp = await clickhouseManagerClient.listDisks(req);
+      const resp = await clickhouseAdminClient.listDisks(req);
       return resp.getItemsList().map((d) => ({
         name: d.getName(),
         path: d.getPath(),
@@ -578,10 +578,10 @@ export async function listDisks(): Promise<ChDisk[]> {
 
 export async function getMetrics(): Promise<{ metrics: ChMetric[]; async_metrics: ChMetric[] }> {
   return coalesce("GetMetrics", async () => {
-    const req = new chMgrPb.GetMetricsRequest();
+    const req = new chAdminPb.GetMetricsRequest();
     try {
-      const resp = await clickhouseManagerClient.getMetrics(req);
-      const mapMetric = (m: InstanceType<typeof chMgrPb.MetricItem>) => ({
+      const resp = await clickhouseAdminClient.getMetrics(req);
+      const mapMetric = (m: InstanceType<typeof chAdminPb.MetricItem>) => ({
         name: m.getName(),
         value: m.getValue(),
         description: m.getDescription(),
@@ -605,15 +605,8 @@ export type ChTableOptions = {
 
 export async function getTableOptions(): Promise<ChTableOptions> {
   return coalesce("GetTableOptions", async () => {
-    const Ctor = chMgrPb.TableOptionsRequest as (new () => InstanceType<typeof chMgrPb.TableOptionsRequest>) | undefined;
-    if (typeof Ctor !== "function") {
-      throw new Error(
-        "TableOptionsRequest недоступен в proto-клиенте. Обновите @marleena/trb-proto и перезагрузите страницу.",
-      );
-    }
-    const req = new Ctor();
     try {
-      const resp = await clickhouseManagerClient.getTableOptions(req);
+      const resp = await clickhouseAdminClient.getTableOptions(new chAdminPb.TableOptionsRequest());
       return {
         engines: resp.getEnginesList(),
         data_types: resp.getDataTypesList(),

@@ -1,4 +1,4 @@
-import { SandboxServiceClient } from "@marleena/trb-proto/tinvest/SandboxServiceClientPb";
+import { SandboxServiceClient } from "@marleena/trb-proto/api/tinvest/SandboxServiceClientPb";
 import {
   CloseSandboxAccountRequest,
   OpenSandboxAccountRequest,
@@ -6,12 +6,12 @@ import {
   type CloseSandboxAccountResponse,
   type OpenSandboxAccountResponse,
   type SandboxPayInResponse,
-} from "@marleena/trb-proto/tinvest/sandbox_pb";
+} from "@marleena/trb-proto/api/tinvest/sandbox_pb";
 import {
   GetAccountsRequest,
   AccountStatus,
   type GetAccountsResponse,
-} from "@marleena/trb-proto/tinvest/users_pb";
+} from "@marleena/trb-proto/api/tinvest/users_pb";
 import {
   CancelOrderRequest,
   GetMaxLotsRequest,
@@ -26,7 +26,7 @@ import {
   type GetOrdersResponse,
   type OrderState,
   type PostOrderResponse,
-} from "@marleena/trb-proto/tinvest/orders_pb";
+} from "@marleena/trb-proto/api/tinvest/orders_pb";
 import {
   OperationsRequest,
   PortfolioRequest,
@@ -36,12 +36,12 @@ import {
   type PortfolioResponse,
   type PositionsResponse,
   type WithdrawLimitsResponse,
-} from "@marleena/trb-proto/tinvest/operations_pb";
+} from "@marleena/trb-proto/api/tinvest/operations_pb";
 import {
   GetStopOrdersRequest,
   type GetStopOrdersResponse,
-} from "@marleena/trb-proto/tinvest/stoporders_pb";
-import { MoneyValue, type Quotation } from "@marleena/trb-proto/tinvest/common_pb";
+} from "@marleena/trb-proto/api/tinvest/stoporders_pb";
+import { MoneyValue, type Quotation } from "@marleena/trb-proto/api/tinvest/common_pb";
 import { getGrpcBaseUrl } from "../common/client";
 import { globalApiCache, type CacheOptions } from "../common/cache";
 import { toPlain, toQuotation, toMoneyValue, parseTimestamp, str, num } from "../common/converters";

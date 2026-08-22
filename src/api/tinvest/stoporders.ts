@@ -1,4 +1,4 @@
-import { StopOrdersServiceClient } from "@marleena/trb-proto/tinvest/StopordersServiceClientPb";
+import { StopOrdersServiceClient } from "@marleena/trb-proto/api/tinvest/StopordersServiceClientPb";
 import {
   CancelStopOrderRequest,
   ExchangeOrderType,
@@ -13,8 +13,8 @@ import {
   type CancelStopOrderResponse,
   type GetStopOrdersResponse,
   type PostStopOrderResponse,
-} from "@marleena/trb-proto/tinvest/stoporders_pb";
-import { type Quotation } from "@marleena/trb-proto/tinvest/common_pb";
+} from "@marleena/trb-proto/api/tinvest/stoporders_pb";
+import { type Quotation } from "@marleena/trb-proto/api/tinvest/common_pb";
 import { getGrpcBaseUrl } from "../common/client";
 import { globalApiCache, type CacheOptions } from "../common/cache";
 import { toPlain, toQuotation, parseTimestamp, str, num } from "../common/converters";

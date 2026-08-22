@@ -1,9 +1,9 @@
 import type { ClientReadableStream, RpcError, Status } from "grpc-web";
-import { MarketDataStreamServiceClient } from "@marleena/trb-proto/tinvest/MarketdataServiceClientPb";
+import { MarketDataStreamServiceClient } from "@marleena/trb-proto/api/tinvest/MarketdataServiceClientPb";
 import {
   MarketDataServerSideStreamRequest,
   type MarketDataResponse,
-} from "@marleena/trb-proto/tinvest/marketdata_pb";
+} from "@marleena/trb-proto/api/tinvest/marketdata_pb";
 import { getGrpcBaseUrl } from "../common/client";
 import { wrapRpcError } from "../common/errors";
 

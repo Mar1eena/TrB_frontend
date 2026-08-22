@@ -1,4 +1,4 @@
-import { OperationsServiceClient } from "@marleena/trb-proto/tinvest/OperationsServiceClientPb";
+import { OperationsServiceClient } from "@marleena/trb-proto/api/tinvest/OperationsServiceClientPb";
 import {
   BrokerReportRequest,
   GenerateBrokerReportRequest,
@@ -19,7 +19,7 @@ import {
   type PortfolioResponse,
   type PositionsResponse,
   type WithdrawLimitsResponse,
-} from "@marleena/trb-proto/tinvest/operations_pb";
+} from "@marleena/trb-proto/api/tinvest/operations_pb";
 import { getGrpcBaseUrl } from "../common/client";
 import { globalApiCache, type CacheOptions } from "../common/cache";
 import { toPlain, parseTimestamp, str, num, bool } from "../common/converters";

@@ -1,20 +1,24 @@
-import { dbApiClient, dbApiPb, dbApiProto } from "./client";
-import { SharesResponse } from "@marleena/trb-proto/tinvest/instruments_pb";
+import { clickhouseClient, chPb } from "../clickhouse/client";
+import { postgresqlClient, pgPb } from "../postgresql/client";
+import { SharesResponse } from "@marleena/trb-proto/api/tinvest/instruments_pb";
 import { toPlain, str, num, bool } from "../common/converters";
 import { wrapRpcError } from "../common/errors";
 
-export const DB_API_GRPC_METHODS = [
-  { value: "ListInstruments", label: "ListInstruments", write: false },
-  { value: "ListInstrumentVersions", label: "ListInstrumentVersions", write: false },
-  { value: "UpsertInstruments", label: "UpsertInstruments", write: true },
-  { value: "ListSchedulerTargets", label: "ListSchedulerTargets", write: false },
-  { value: "ListLastDownloads", label: "ListLastDownloads", write: false },
-  { value: "SyncSchedulerTargets", label: "SyncSchedulerTargets", write: true },
+export const DATA_API_GRPC_METHODS = [
+  { value: "ListInstruments", label: "ListInstruments", write: false, service: "ClickHouse" },
+  { value: "ListInstrumentVersions", label: "ListInstrumentVersions", write: false, service: "ClickHouse" },
+  { value: "UpsertInstruments", label: "UpsertInstruments", write: true, service: "ClickHouse" },
+  { value: "ListLastDownloads", label: "ListLastDownloads", write: false, service: "ClickHouse" },
+  { value: "ListSchedulerTargets", label: "ListSchedulerTargets", write: false, service: "PostgreSQL" },
+  { value: "SyncSchedulerTargets", label: "SyncSchedulerTargets", write: true, service: "PostgreSQL" },
 ] as const;
 
-export type DbApiGrpcMethod = (typeof DB_API_GRPC_METHODS)[number]["value"];
+export const DB_API_GRPC_METHODS = DATA_API_GRPC_METHODS;
 
-export function defaultDbApiRequestBody(method: string): Record<string, unknown> {
+export type DataApiGrpcMethod = (typeof DATA_API_GRPC_METHODS)[number]["value"];
+export type DbApiGrpcMethod = DataApiGrpcMethod;
+
+export function defaultDataApiRequestBody(method: string): Record<string, unknown> {
   if (method === "ListInstruments") {
     return { filter: { q: "", limit: 20, offset: 0 }, lite: true };
   }
@@ -36,6 +40,8 @@ export function defaultDbApiRequestBody(method: string): Record<string, unknown>
   return {};
 }
 
+export const defaultDbApiRequestBody = defaultDataApiRequestBody;
+
 export function prettyJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
@@ -47,7 +53,7 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function listFilterFrom(request: Record<string, unknown>) {
   const src = asRecord(request.filter) ?? request;
-  const filter = new dbApiPb.ListFilter();
+  const filter = new chPb.ListFilter();
   const q = str(src.q);
   if (q) filter.setQ(q);
   const limit = num(src.limit);
@@ -68,59 +74,64 @@ function syncInstrumentsFrom(request: Record<string, unknown>) {
     const intervals = Array.isArray(row.intervals)
       ? row.intervals.map((n) => num(n)).filter((n) => n > 0)
       : [];
-    const msg = new dbApiPb.SchedulerTargetInstrument();
+    const msg = new pgPb.SchedulerTargetInstrument();
     msg.setUid(uid);
     msg.setIntervalsList(intervals);
     return [msg];
   });
 }
 
-export async function callDbApiGrpc(
-  method: DbApiGrpcMethod,
+export function dataApiServiceName(method: DataApiGrpcMethod): string {
+  return DATA_API_GRPC_METHODS.find((item) => item.value === method)?.service ?? "ClickHouse";
+}
+
+export async function callDataApiGrpc(
+  method: DataApiGrpcMethod,
   request: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
   try {
     switch (method) {
       case "ListInstruments": {
-        const req = new dbApiPb.ListInstrumentsRequest();
+        const req = new chPb.ListInstrumentsRequest();
         req.setFilter(listFilterFrom(request));
         req.setLite(bool(request.lite, false));
-        return toPlain(await dbApiClient.listInstruments(req));
+        return toPlain(await clickhouseClient.listInstruments(req));
       }
       case "ListInstrumentVersions": {
-        const Pb = dbApiProto();
-        const req = new Pb.ListInstrumentVersionsRequest();
+        const req = new chPb.ListInstrumentVersionsRequest();
         req.setUid(str(request.uid).trim());
-        return toPlain(await dbApiClient.listInstrumentVersions(req));
+        return toPlain(await clickhouseClient.listInstrumentVersions(req));
       }
       case "UpsertInstruments": {
         const req = new SharesResponse();
-        return toPlain(await dbApiClient.upsertInstruments(req));
+        return toPlain(await clickhouseClient.upsertInstruments(req));
       }
       case "ListSchedulerTargets": {
         return toPlain(
-          await dbApiClient.listSchedulerTargets(new dbApiPb.ListSchedulerTargetsRequest()),
+          await postgresqlClient.listSchedulerTargets(new pgPb.ListSchedulerTargetsRequest()),
         );
       }
       case "ListLastDownloads": {
-        const req = new dbApiPb.ListLastDownloadsRequest();
+        const req = new chPb.ListLastDownloadsRequest();
         req.setFilter(listFilterFrom(request));
-        return toPlain(await dbApiClient.listLastDownloads(req));
+        return toPlain(await clickhouseClient.listLastDownloads(req));
       }
       case "SyncSchedulerTargets": {
-        const req = new dbApiPb.SyncSchedulerTargetsRequest();
+        const req = new pgPb.SyncSchedulerTargetsRequest();
         req.setAllowEmpty(bool(request.allow_empty, false));
         for (const item of syncInstrumentsFrom(request)) {
           req.addInstruments(item);
         }
-        return toPlain(await dbApiClient.syncSchedulerTargets(req));
+        return toPlain(await postgresqlClient.syncSchedulerTargets(req));
       }
       default: {
         const exhaustiveCheck: never = method;
-        throw new Error(`Неизвестный метод DbApi: ${exhaustiveCheck}`);
+        throw new Error(`Неизвестный метод: ${exhaustiveCheck}`);
       }
     }
   } catch (err) {
     throw wrapRpcError(err);
   }
 }
+
+export const callDbApiGrpc = callDataApiGrpc;

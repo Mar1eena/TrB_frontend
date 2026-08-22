@@ -1,5 +1,5 @@
 import type { ClientReadableStream, RpcError, Status } from "grpc-web";
-import { OperationsStreamServiceClient } from "@marleena/trb-proto/tinvest/OperationsServiceClientPb";
+import { OperationsStreamServiceClient } from "@marleena/trb-proto/api/tinvest/OperationsServiceClientPb";
 import {
   OperationsStreamRequest,
   PortfolioStreamRequest,
@@ -7,7 +7,7 @@ import {
   type OperationsStreamResponse,
   type PortfolioStreamResponse,
   type PositionsStreamResponse,
-} from "@marleena/trb-proto/tinvest/operations_pb";
+} from "@marleena/trb-proto/api/tinvest/operations_pb";
 import { getGrpcBaseUrl } from "../common/client";
 import { wrapRpcError } from "../common/errors";
 import type { StreamSubscription, StreamSubscriptionCallbacks } from "./marketdataStream";

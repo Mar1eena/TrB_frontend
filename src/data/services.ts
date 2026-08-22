@@ -65,7 +65,7 @@ export const serviceTree: ServiceNode[] = [
         id: "data",
         label: "Data",
         kind: "service",
-        description: "Доменный API: инструменты, загрузки, планировщик через Envoy.",
+        description: "Доменный API: ClickHouse (инструменты, загрузки) и PostgreSQL (планировщик).",
       },
       {
         id: "clickhouse",

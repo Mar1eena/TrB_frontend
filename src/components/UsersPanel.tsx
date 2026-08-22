@@ -4,7 +4,7 @@ import {
   AccountType,
   AccessLevel,
   AccountValue,
-} from "@marleena/trb-proto/tinvest/users_pb";
+} from "@marleena/trb-proto/api/tinvest/users_pb";
 import {
   USERS_GRPC_METHODS,
   callUsersGrpc,
