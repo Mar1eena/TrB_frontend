@@ -50,12 +50,12 @@ import {
   type PgTableOptions,
   type PgTablePartition,
   type PgTablespace,
-} from "../api/postgresql";
-import "../styles/tables.css";
-import "./SchedulerPanel.css";
+} from "../../api/postgresql";
+import "../../styles/tables.css";
+import "../SchedulerPanel/SchedulerPanel.css";
 import "./PostgresManagerPanel.css";
 import PostgresCreateTableModal from "./PostgresCreateTableModal";
-import { useNotify } from "../notifications";
+import { useNotify } from "../../notifications";
 
 type MainTab = "explorer" | "console" | "processes" | "system";
 type TableDetailTab = "columns" | "preview" | "indexes" | "partitions" | "ddl";

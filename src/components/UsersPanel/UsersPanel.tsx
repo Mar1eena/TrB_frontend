@@ -10,10 +10,10 @@ import {
   callUsersGrpc,
   parseMoney,
   type UsersGrpcMethod,
-} from "../api/usersGrpc";
-import "../styles/tables.css";
+} from "../../api/usersGrpc";
+import "../../styles/tables.css";
 import "./UsersPanel.css";
-import { useNotify } from "../notifications";
+import { useNotify } from "../../notifications";
 
 const ACCOUNT_STATUSES = [
   { value: AccountStatus.ACCOUNT_STATUS_ALL, label: "Все" },

@@ -7,13 +7,13 @@ import {
   useState,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { listInstruments, listInstrumentVersions, type Instrument } from "../api/data";
-import { syncInstruments } from "../api/test";
-import { formatDate, formatDateTimeMs } from "../api/scheduler";
-import { useThrottledColumnLayout } from "../hooks/useThrottledColumnLayout";
-import { useNotify } from "../notifications";
-import "../styles/tables.css";
-import "./SchedulerPanel.css";
+import { listInstruments, listInstrumentVersions, type Instrument } from "../../api/data";
+import { syncInstruments } from "../../api/test";
+import { formatDate, formatDateTimeMs } from "../../api/scheduler";
+import { useThrottledColumnLayout } from "../../hooks/useThrottledColumnLayout";
+import { useNotify } from "../../notifications";
+import "../../styles/tables.css";
+import "../SchedulerPanel/SchedulerPanel.css";
 import "./InstrumentsPanel.css";
 
 type SortKey =

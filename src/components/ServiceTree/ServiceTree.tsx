@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from "react";
-import type { ServiceNode } from "../data/services";
+import type { ServiceNode } from "../../data/services";
 
 type ServiceTreeProps = {
   nodes: ServiceNode[];

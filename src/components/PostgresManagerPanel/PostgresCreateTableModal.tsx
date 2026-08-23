@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useRef, useState } from "react";
-import { type PgColumnWrite, type PgTableOptions } from "../api/postgresql";
+import { type PgColumnWrite, type PgTableOptions } from "../../api/postgresql";
 
 type ColumnRow = {
   name: string;

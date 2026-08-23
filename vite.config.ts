@@ -44,16 +44,17 @@ const protoModules = [
 const protoPanelFiles = [
   "./src/main.tsx",
   "./src/App.tsx",
-  "./src/components/ServiceTree.tsx",
-  "./src/components/NatsAdminPanel.tsx",
-  "./src/components/UsersPanel.tsx",
-  "./src/components/GrpcDebugPanel.tsx",
-  "./src/components/DataApiDebugPanel.tsx",
-  "./src/components/ClickHouseManagerPanel.tsx",
-  "./src/components/PostgresManagerPanel.tsx",
-  "./src/components/SchedulerPanel.tsx",
-  "./src/components/DownloadHistoryPanel.tsx",
-  "./src/components/HistoricCandlePanel.tsx",
+  "./src/components/ServiceTree/ServiceTree.tsx",
+  "./src/components/NatsAdminPanel/NatsAdminPanel.tsx",
+  "./src/components/UsersPanel/UsersPanel.tsx",
+  "./src/components/GrpcDebugPanel/GrpcDebugPanel.tsx",
+  "./src/components/DataApiDebugPanel/DataApiDebugPanel.tsx",
+  "./src/components/ClickHouseManagerPanel/ClickHouseManagerPanel.tsx",
+  "./src/components/PostgresManagerPanel/PostgresManagerPanel.tsx",
+  "./src/components/SchedulerPanel/SchedulerPanel.tsx",
+  "./src/components/DownloadHistoryPanel/DownloadHistoryPanel.tsx",
+  "./src/components/HistoricCandlePanel/HistoricCandlePanel.tsx",
+  "./src/components/InstrumentsPanel/InstrumentsPanel.tsx",
 ];
 
 /**

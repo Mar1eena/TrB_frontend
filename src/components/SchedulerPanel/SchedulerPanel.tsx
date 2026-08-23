@@ -15,11 +15,11 @@ import {
   fetchTargets,
   groupTargets,
   syncTargets,
-} from "../api/scheduler";
-import { useThrottledColumnLayout } from "../hooks/useThrottledColumnLayout";
-import "../styles/tables.css";
+} from "../../api/scheduler";
+import { useThrottledColumnLayout } from "../../hooks/useThrottledColumnLayout";
+import "../../styles/tables.css";
 import "./SchedulerPanel.css";
-import { useNotify } from "../notifications";
+import { useNotify } from "../../notifications";
 
 type CatalogItem = {
   uid: string;

@@ -37,12 +37,12 @@ import {
   type ChTable,
   type ChTableOptions,
   type ChTablePart,
-} from "../api/clickhouse";
-import "../styles/tables.css";
-import "./SchedulerPanel.css";
+} from "../../api/clickhouse";
+import "../../styles/tables.css";
+import "../SchedulerPanel/SchedulerPanel.css";
 import "./ClickHouseManagerPanel.css";
 import CreateTableModal from "./ClickHouseCreateTableModal";
-import { useNotify } from "../notifications";
+import { useNotify } from "../../notifications";
 
 type MainTab = "explorer" | "console" | "processes" | "system";
 type TableDetailTab = "columns" | "preview" | "parts" | "ddl";

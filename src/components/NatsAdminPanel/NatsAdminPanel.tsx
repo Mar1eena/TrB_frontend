@@ -50,11 +50,11 @@ import {
   type NatsSettingsFile,
   type NatsStream,
   type NatsStreamWrite,
-} from "../api/nats";
-import "../styles/tables.css";
-import "./SchedulerPanel.css";
+} from "../../api/nats";
+import "../../styles/tables.css";
+import "../SchedulerPanel/SchedulerPanel.css";
 import "./NatsAdminPanel.css";
-import { useNotify } from "../notifications";
+import { useNotify } from "../../notifications";
 
 type MainTab = "explorer" | "publish" | "system";
 type StreamDetailTab = "overview" | "config" | "consumers" | "messages" | "json";

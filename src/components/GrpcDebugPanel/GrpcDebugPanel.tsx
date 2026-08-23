@@ -5,10 +5,10 @@ import {
   findDebugService,
   prettyJson,
   type DebugServiceId,
-} from "../api/tinvest/debug";
-import { TinvestRpcError } from "../api/common/errors";
+} from "../../api/tinvest/debug";
+import { TinvestRpcError } from "../../api/common/errors";
 import "./GrpcDebugPanel.css";
-import { useNotify } from "../notifications";
+import { useNotify } from "../../notifications";
 
 const STORAGE_SERVICE = "trb.grpcDebug.service";
 const STORAGE_METHOD = "trb.grpcDebug.method.";

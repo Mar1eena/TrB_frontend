@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useRef, useState } from "react";
-import { type ChColumnWrite, type ChTableOptions } from "../api/clickhouse";
+import { type ChColumnWrite, type ChTableOptions } from "../../api/clickhouse";
 
 const DEFAULT_KIND_OPTIONS = ["", "DEFAULT", "MATERIALIZED", "ALIAS", "EPHEMERAL"];
 

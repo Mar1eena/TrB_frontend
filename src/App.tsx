@@ -1,19 +1,19 @@
 import { Component, lazy, Suspense, useEffect, useState, type ComponentType, type ReactNode } from "react";
-import ServiceTree from "./components/ServiceTree";
+import ServiceTree from "./components/ServiceTree/ServiceTree";
 import { findService, serviceTree } from "./data/services";
 import { NotificationsProvider } from "./notifications";
 import "./App.css";
 
-const InstrumentsPanel = lazy(() => import("./components/InstrumentsPanel"));
-const SchedulerPanel = lazy(() => import("./components/SchedulerPanel"));
-const HistoricCandlePanel = lazy(() => import("./components/HistoricCandlePanel"));
-const DownloadHistoryPanel = lazy(() => import("./components/DownloadHistoryPanel"));
-const NatsAdminPanel = lazy(() => import("./components/NatsAdminPanel"));
-const UsersPanel = lazy(() => import("./components/UsersPanel"));
-const GrpcDebugPanel = lazy(() => import("./components/GrpcDebugPanel"));
-const DataApiDebugPanel = lazy(() => import("./components/DataApiDebugPanel"));
-const ClickHouseManagerPanel = lazy(() => import("./components/ClickHouseManagerPanel"));
-const PostgresManagerPanel = lazy(() => import("./components/PostgresManagerPanel"));
+const InstrumentsPanel = lazy(() => import("./components/InstrumentsPanel/InstrumentsPanel"));
+const SchedulerPanel = lazy(() => import("./components/SchedulerPanel/SchedulerPanel"));
+const HistoricCandlePanel = lazy(() => import("./components/HistoricCandlePanel/HistoricCandlePanel"));
+const DownloadHistoryPanel = lazy(() => import("./components/DownloadHistoryPanel/DownloadHistoryPanel"));
+const NatsAdminPanel = lazy(() => import("./components/NatsAdminPanel/NatsAdminPanel"));
+const UsersPanel = lazy(() => import("./components/UsersPanel/UsersPanel"));
+const GrpcDebugPanel = lazy(() => import("./components/GrpcDebugPanel/GrpcDebugPanel"));
+const DataApiDebugPanel = lazy(() => import("./components/DataApiDebugPanel/DataApiDebugPanel"));
+const ClickHouseManagerPanel = lazy(() => import("./components/ClickHouseManagerPanel/ClickHouseManagerPanel"));
+const PostgresManagerPanel = lazy(() => import("./components/PostgresManagerPanel/PostgresManagerPanel"));
 
 type PanelSpec = {
   id: string;

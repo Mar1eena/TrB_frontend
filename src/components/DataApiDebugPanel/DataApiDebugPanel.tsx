@@ -1,4 +1,4 @@
-import { useNotify } from "../notifications";
+import { useNotify } from "../../notifications";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DATA_API_GRPC_METHODS,
@@ -7,9 +7,9 @@ import {
   defaultDataApiRequestBody,
   prettyJson,
   type DataApiGrpcMethod,
-} from "../api/data/debug";
-import { TinvestRpcError } from "../api/common/errors";
-import "./GrpcDebugPanel.css";
+} from "../../api/data/debug";
+import { TinvestRpcError } from "../../api/common/errors";
+import "../GrpcDebugPanel/GrpcDebugPanel.css";
 
 const STORAGE_METHOD = "trb.dbApiDebug.method";
 const STORAGE_BODY = "trb.dbApiDebug.body.";

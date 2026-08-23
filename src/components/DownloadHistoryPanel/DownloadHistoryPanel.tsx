@@ -1,4 +1,4 @@
-import { useNotify } from "../notifications";
+import { useNotify } from "../../notifications";
 import {
   memo,
   startTransition,
@@ -9,16 +9,16 @@ import {
   useState,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { CANDLE_INTERVALS } from "../api/scheduler";
+import { CANDLE_INTERVALS } from "../../api/scheduler";
 import {
   fetchLastDownloads,
   formatDateTime,
   intervalLabel,
   type LastDownload,
-} from "../api/historicCandle";
-import { useThrottledColumnLayout } from "../hooks/useThrottledColumnLayout";
-import "../styles/tables.css";
-import "./SchedulerPanel.css";
+} from "../../api/historicCandle";
+import { useThrottledColumnLayout } from "../../hooks/useThrottledColumnLayout";
+import "../../styles/tables.css";
+import "../SchedulerPanel/SchedulerPanel.css";
 
 type SortKey =
   | "uid"
