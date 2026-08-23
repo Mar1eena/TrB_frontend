@@ -46,14 +46,10 @@ const protoPanelFiles = [
   "./src/App.tsx",
   "./src/components/ServiceTree/ServiceTree.tsx",
   "./src/components/NatsAdminPanel/NatsAdminPanel.tsx",
-  "./src/components/UsersPanel/UsersPanel.tsx",
-  "./src/components/GrpcDebugPanel/GrpcDebugPanel.tsx",
-  "./src/components/DataApiDebugPanel/DataApiDebugPanel.tsx",
   "./src/components/ClickHouseManagerPanel/ClickHouseManagerPanel.tsx",
   "./src/components/PostgresManagerPanel/PostgresManagerPanel.tsx",
   "./src/components/SchedulerPanel/SchedulerPanel.tsx",
   "./src/components/DownloadHistoryPanel/DownloadHistoryPanel.tsx",
-  "./src/components/HistoricCandlePanel/HistoricCandlePanel.tsx",
   "./src/components/InstrumentsPanel/InstrumentsPanel.tsx",
 ];
 

@@ -6,12 +6,8 @@ import "./App.css";
 
 const InstrumentsPanel = lazy(() => import("./components/InstrumentsPanel/InstrumentsPanel"));
 const SchedulerPanel = lazy(() => import("./components/SchedulerPanel/SchedulerPanel"));
-const HistoricCandlePanel = lazy(() => import("./components/HistoricCandlePanel/HistoricCandlePanel"));
 const DownloadHistoryPanel = lazy(() => import("./components/DownloadHistoryPanel/DownloadHistoryPanel"));
 const NatsAdminPanel = lazy(() => import("./components/NatsAdminPanel/NatsAdminPanel"));
-const UsersPanel = lazy(() => import("./components/UsersPanel/UsersPanel"));
-const GrpcDebugPanel = lazy(() => import("./components/GrpcDebugPanel/GrpcDebugPanel"));
-const DataApiDebugPanel = lazy(() => import("./components/DataApiDebugPanel/DataApiDebugPanel"));
 const ClickHouseManagerPanel = lazy(() => import("./components/ClickHouseManagerPanel/ClickHouseManagerPanel"));
 const PostgresManagerPanel = lazy(() => import("./components/PostgresManagerPanel/PostgresManagerPanel"));
 
@@ -26,11 +22,7 @@ const PANELS: PanelSpec[] = [
   { id: "instruments", eyebrow: "Сервисы", title: "Инструменты", Component: InstrumentsPanel },
   { id: "historicCandle_scheduler", eyebrow: "Сервисы", title: "Планировщик свечей", Component: SchedulerPanel },
   { id: "downloadHistory", eyebrow: "История", title: "История загрузок", Component: DownloadHistoryPanel },
-  { id: "historicCandle", eyebrow: "Сервисы", title: "Исторические свечи", Component: HistoricCandlePanel },
-  { id: "invest", eyebrow: "Админка / API", title: "Invest", Component: UsersPanel },
   { id: "nats", eyebrow: "Админка / API", title: "Админка NATS", Component: NatsAdminPanel },
-  { id: "grpc_debug", eyebrow: "Админка / API", title: "Отладка RPC", Component: GrpcDebugPanel },
-  { id: "data", eyebrow: "Админка / API", title: "Data", Component: DataApiDebugPanel },
   { id: "clickhouse", eyebrow: "Админка / API", title: "ClickHouse", Component: ClickHouseManagerPanel },
   { id: "postgresql", eyebrow: "Админка / API", title: "PostgreSQL", Component: PostgresManagerPanel },
 ];

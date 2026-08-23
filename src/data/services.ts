@@ -19,12 +19,6 @@ export const serviceTree: ServiceNode[] = [
         description: "Справочник акций TrB.sht: реквизиты, версия, обновление из Тинькофф.",
       },
       {
-        id: "historicCandle",
-        label: "Исторические свечи",
-        kind: "service",
-        description: "Догрузка исторических свечей по заданиям из NATS.",
-      },
-      {
         id: "downloadHistory",
         label: "История загрузок",
         kind: "service",
@@ -44,28 +38,10 @@ export const serviceTree: ServiceNode[] = [
     kind: "group",
     children: [
       {
-        id: "invest",
-        label: "Invest",
-        kind: "service",
-        description: "gRPC-прокси T-Invest: счета, инструменты, market data, заявки, песочница.",
-      },
-      {
         id: "nats",
         label: "Админка NATS",
         kind: "service",
         description: "Администрирование JetStream: стримы, consumer'ы, сообщения.",
-      },
-      {
-        id: "grpc_debug",
-        label: "Отладка RPC",
-        kind: "service",
-        description: "Unary gRPC-запросы ко всем T-Invest прокси через Envoy.",
-      },
-      {
-        id: "data",
-        label: "Data",
-        kind: "service",
-        description: "Доменный API: ClickHouse (инструменты, загрузки) и PostgreSQL (планировщик).",
       },
       {
         id: "clickhouse",
