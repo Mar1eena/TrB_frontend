@@ -8,9 +8,12 @@
 }
 
 /* Base Buttons */
-.primary-btn,
-.secondary-btn,
-.danger-btn {
+.ch-panel .primary-btn,
+.ch-panel .secondary-btn,
+.ch-panel .danger-btn,
+.ch-modal-window .primary-btn,
+.ch-modal-window .secondary-btn,
+.ch-modal-window .danger-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -29,69 +32,84 @@
   border: 1px solid transparent;
 }
 
-.primary-btn {
+.ch-panel .primary-btn,
+.ch-modal-window .primary-btn {
   background: linear-gradient(135deg, #7c4dff, #651fff);
   color: #ffffff;
   border-color: rgba(162, 107, 255, 0.4);
   box-shadow: 0 2px 8px rgba(101, 31, 255, 0.25);
 }
 
-.primary-btn:hover:not(:disabled) {
+.ch-panel .primary-btn:hover:not(:disabled),
+.ch-modal-window .primary-btn:hover:not(:disabled) {
   background: linear-gradient(135deg, #8c65ff, #7333ff);
   border-color: rgba(180, 135, 255, 0.6);
   box-shadow: 0 4px 12px rgba(101, 31, 255, 0.35);
   transform: translateY(-1px);
 }
 
-.primary-btn:active:not(:disabled) {
+.ch-panel .primary-btn:active:not(:disabled),
+.ch-modal-window .primary-btn:active:not(:disabled) {
   transform: translateY(0);
   box-shadow: 0 1px 4px rgba(101, 31, 255, 0.2);
 }
 
-.secondary-btn {
+.ch-panel .secondary-btn,
+.ch-modal-window .secondary-btn {
   background: rgba(255, 255, 255, 0.05);
   color: #dfd8f5;
   border: 1px solid rgba(200, 180, 230, 0.22);
 }
 
-.secondary-btn:hover:not(:disabled) {
+.ch-panel .secondary-btn:hover:not(:disabled),
+.ch-modal-window .secondary-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.09);
   border-color: rgba(200, 180, 230, 0.4);
   color: #ffffff;
 }
 
-.secondary-btn:active:not(:disabled) {
+.ch-panel .secondary-btn:active:not(:disabled),
+.ch-modal-window .secondary-btn:active:not(:disabled) {
   background: rgba(255, 255, 255, 0.04);
 }
 
-.danger-btn {
+.ch-panel .danger-btn,
+.ch-modal-window .danger-btn {
   background: rgba(220, 70, 70, 0.15);
   color: #ff9b9b;
   border: 1px solid rgba(220, 80, 80, 0.35);
 }
 
-.danger-btn:hover:not(:disabled) {
+.ch-panel .danger-btn:hover:not(:disabled),
+.ch-modal-window .danger-btn:hover:not(:disabled) {
   background: rgba(220, 70, 70, 0.28);
   border-color: rgba(240, 100, 100, 0.55);
   color: #ffc4c4;
 }
 
-.danger-btn:active:not(:disabled) {
+.ch-panel .danger-btn:active:not(:disabled),
+.ch-modal-window .danger-btn:active:not(:disabled) {
   background: rgba(220, 70, 70, 0.2);
 }
 
-.primary-btn:disabled,
-.secondary-btn:disabled,
-.danger-btn:disabled {
+.ch-panel .primary-btn:disabled,
+.ch-panel .secondary-btn:disabled,
+.ch-panel .danger-btn:disabled,
+.ch-modal-window .primary-btn:disabled,
+.ch-modal-window .secondary-btn:disabled,
+.ch-modal-window .danger-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
   transform: none !important;
   box-shadow: none !important;
 }
 
-.primary-btn.sm,
-.secondary-btn.sm,
-.danger-btn.sm {
+.ch-panel .primary-btn.sm,
+.ch-panel .secondary-btn.sm,
+.ch-panel .danger-btn.sm,
+.ch-modal-window .primary-btn.sm,
+.ch-modal-window .secondary-btn.sm,
+.ch-modal-window .danger-btn.sm {
   padding: 0.24rem 0.55rem;
   font-size: 0.74rem;
   border-radius: 0.4rem;
@@ -1115,20 +1133,20 @@
 }
 
 /* Modal Form Fields */
-.field {
+.ch-modal-body .field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
 }
 
-.field label {
+.ch-modal-body .field label {
   font-size: 0.78rem;
   font-weight: 500;
   color: #b8aecf;
 }
 
-.field input,
-.field select {
+.ch-modal-body .field input,
+.ch-modal-body .field select {
   width: 100%;
 }
 

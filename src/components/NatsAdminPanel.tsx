@@ -4,7 +4,6 @@ import {
   COMPRESSION_OPTIONS,
   DELIVER_OPTIONS,
   DISCARD_OPTIONS,
-  REPLAY_OPTIONS,
   RETENTION_OPTIONS,
   STORAGE_OPTIONS,
   applyNatsSettings,
@@ -45,6 +44,7 @@ import {
   type NatsAccount,
   type NatsConsumer,
   type NatsConsumerWrite,
+  type NatsMessage,
   type NatsMessageRow,
   type NatsSettingsFile,
   type NatsStream,
@@ -55,7 +55,21 @@ import "./SchedulerPanel.css";
 import "./NatsAdminPanel.css";
 import { useNotify } from "../notifications";
 
-type DetailTab = "overview" | "config" | "consumers" | "messages";
+type MainTab = "explorer" | "publish" | "system";
+type StreamDetailTab = "overview" | "config" | "consumers" | "messages" | "json";
+
+type Dialog =
+  | { kind: "create-stream" }
+  | { kind: "create-consumer" }
+  | { kind: "edit-consumer"; consumer: NatsConsumer }
+  | { kind: "view-message"; msg: NatsMessage }
+  | {
+      kind: "confirm-danger";
+      title: string;
+      prompt: string;
+      actionName: string;
+      onConfirm: () => Promise<void>;
+    };
 
 type StreamFormState = {
   name: string;
@@ -146,101 +160,6 @@ const emptyStreamForm = (): StreamFormState => ({
   metadata: "",
 });
 
-const STREAM_HINTS = {
-  name: "Уникальное имя стрима. После создания не меняется.",
-  description: "Свободный комментарий. На работу стрима не влияет.",
-  subjects:
-    "Шаблоны NATS: какие сообщения попадают в стрим. Несколько значений — через запятую или пробел.",
-  retention:
-    "Когда NATS может удалять сообщения: по лимитам, пока они нужны consumers, или как очередь задач.",
-  storage: "Где хранить данные. File переживает рестарт, Memory быстрее, но теряется.",
-  discard:
-    "Что делать при достижении лимита: вытеснять самые старые или отклонять новые публикации.",
-  discardNewPerSubject:
-    "Лимит Discard New считать отдельно по каждому subject, а не по стриму целиком.",
-  msgs: "Сколько сообщений сейчас лежит в стриме.",
-  bytes: "Суммарный объём тел сообщений на диске или в памяти.",
-  consumers: "Сколько consumer'ов подписано на этот стрим.",
-  numSubjects: "Сколько уникальных subject среди сообщений в стриме.",
-  firstSeq: "Sequence number самого старого сообщения, которое ещё хранится.",
-  lastSeq: "Sequence number последнего записанного сообщения.",
-  firstTs: "Время первого сообщения, которое ещё есть в стриме.",
-  lastTs: "Время последней записи в стрим.",
-  numDeleted:
-    "Сообщения, вырезанные из стрима. Из-за них в нумерации seq появляются дыры.",
-  maxMsgs: "Максимум сообщений в стриме. 0 или пусто — без лимита.",
-  maxBytes: "Максимальный объём стрима. 0 или пусто — без лимита.",
-  maxAge: "Как долго хранить сообщение. 0 — без ограничения по времени.",
-  maxConsumers: "Потолок числа consumer'ов. 0 — без лимита.",
-  maxMsgsPerSubject: "Сколько сообщений держать по одному subject.",
-  maxMsgSize: "Максимальный размер одного сообщения в байтах.",
-  replicas: "Сколько копий стрима в кластере JetStream. 1 — без репликации.",
-  compression: "Сжимать ли блоки на диске. S2 экономит место, чуть грузит CPU.",
-  duplicateWindow:
-    "Окно дедупликации по заголовку Nats-Msg-Id. Повтор с тем же id внутри окна отбрасывается.",
-  firstSeqCfg: "С какого sequence начать нумерацию при создании стрима.",
-  allowDirect: "Читать сообщения по seq или last напрямую, минуя consumer.",
-  noAck: "Публиковать без подтверждения JetStream. Быстрее, но сообщение можно потерять.",
-  sealed: "Стрим закрыт: нельзя писать и менять конфигурацию.",
-  denyDelete: "Запретить удаление отдельных сообщений.",
-  denyPurge: "Запретить очистку (purge) всего стрима.",
-  allowRollup:
-    "Разрешить заголовок Nats-Rollup: свернуть историю subject до одного сообщения.",
-  allowMsgTtl: "Разрешить TTL на отдельные сообщения через заголовок Nats-TTL.",
-  subjectDeleteMarkerTtl: "Как долго хранить маркер удаления subject после rollup или TTL.",
-  metadata: "Произвольные пары ключ=значение. На логику JetStream не влияют.",
-  cluster: "Raft-группа стрима и текущий лидер, который принимает записи.",
-  created: "Когда стрим создали на сервере.",
-} as const;
-
-const CONSUMER_HINTS = {
-  durable: "Имя durable consumer. После создания не меняется.",
-  description: "Свободный комментарий. На доставку не влияет.",
-  filterSubject: "Один subject-фильтр. Consumer видит только подходящие сообщения.",
-  filterSubjects: "Несколько фильтров через запятую. Вместо одного filter subject.",
-  deliver:
-    "Откуда начать читать: все сообщения, только новые, последнее, с seq или с времени.",
-  replay: "Как отдавать историю: сразу (instant) или в темпе оригинальной записи.",
-  ack: "Как подтверждать: каждое сообщение, пакетом или без ack.",
-  ackWait: "Сколько ждать ack, прежде чем отдать сообщение снова.",
-  maxDeliver: "Сколько раз можно передоставить одно сообщение. 0 — без лимита.",
-  maxAckPending: "Сколько сообщений можно держать без ack одновременно.",
-  maxWaiting: "Сколько pull-запросов может ждать в очереди.",
-  optStartSeq: "Начать с этого stream seq, если deliver = by start sequence.",
-  optStartTime: "Начать с этого времени, если deliver = by start time.",
-  deliverSubject: "Push: куда NATS будет публиковать сообщения consumer'у.",
-  deliverGroup: "Push queue-group: несколько подписчиков делят нагрузку.",
-  backoff: "Паузы между повторными доставками, в секундах через запятую.",
-  rateLimit: "Ограничение скорости выдачи, байт/с.",
-  sampleFreq: "Какой процент сообщений семплировать для мониторинга.",
-  maxRequestBatch: "Максимум сообщений в одном pull-запросе.",
-  maxRequestExpires: "Максимальный expire у pull-запроса, сек.",
-  maxRequestMaxBytes: "Максимальный объём одного pull-ответа.",
-  idleHeartbeat: "Интервал heartbeat'ов, если нет сообщений. Для push.",
-  inactiveThreshold: "Удалить inactive consumer спустя столько секунд простоя.",
-  replicas: "Сколько копий consumer state в кластере. 0 — как у стрима.",
-  memoryStorage: "Держать состояние consumer в RAM, а не на диске.",
-  headersOnly: "Доставлять только заголовки, без тела сообщения.",
-  flowControl: "Push: не слать новые сообщения, пока клиент не подтвердит поток.",
-  metadata: "Произвольные пары ключ=значение.",
-} as const;
-
-function retentionNote(value: number): string {
-  if (value === 1) return "Хранится, пока нужно хотя бы одному consumer.";
-  if (value === 2) return "Удаляется сразу после ack — очередь задач.";
-  return "Удаляется по лимитам msgs / bytes / age.";
-}
-
-function discardNote(value: number): string {
-  if (value === 1) return "Новые публикации отклоняются, старые остаются.";
-  return "Самые старые сообщения вытесняются.";
-}
-
-function limitText(value: number, format?: (n: number) => string): string {
-  if (!value || value < 0) return "без лимита";
-  return format ? format(value) : value.toLocaleString("ru-RU");
-}
-
 const emptyConsumerForm = (): ConsumerFormState => ({
   durable: "",
   description: "",
@@ -272,6 +191,56 @@ const emptyConsumerForm = (): ConsumerFormState => ({
   metadata: "",
 });
 
+const STREAM_HINTS = {
+  name: "Уникальное имя стрима. После создания не меняется.",
+  description: "Свободный комментарий. На работу стрима не влияет.",
+  subjects:
+    "Шаблоны NATS: какие сообщения попадают в стрим. Несколько значений — через запятую или новую строку.",
+  retention:
+    "Когда NATS может удалять сообщения: по лимитам (limits), пока они нужны consumers (interest), или как очередь задач (workqueue).",
+  storage: "Где хранить данные. File переживает рестарт, Memory быстрее, но теряется при перезапуске.",
+  discard:
+    "Что делать при достижении лимита: вытеснять самые старые (old) или отклонять новые публикации (new).",
+  discardNewPerSubject:
+    "Лимит Discard New считать отдельно по каждому subject, а не по стриму целиком.",
+  msgs: "Сколько сообщений сейчас лежит в стриме.",
+  bytes: "Суммарный объём тел сообщений на диске или в памяти.",
+  consumers: "Сколько consumer'ов подписано на этот стрим.",
+  numSubjects: "Сколько уникальных subject среди сообщений в стриме.",
+  firstSeq: "Sequence number самого старого сообщения, которое ещё хранится.",
+  lastSeq: "Sequence number последнего записанного сообщения.",
+  firstTs: "Время первого сообщения, которое ещё есть в стриме.",
+  lastTs: "Время последней записи в стрим.",
+  numDeleted: "Сообщения, вырезанные из стрима. Из-за них в нумерации seq появляются дыры.",
+  maxMsgs: "Максимум сообщений в стриме. Пусто — без лимита.",
+  maxBytes: "Максимальный объём стрима. Пусто — без лимита.",
+  maxAge: "Как долго хранить сообщение. 0 — без ограничения по времени.",
+  maxConsumers: "Потолок числа consumer'ов. Пусто — без лимита.",
+  maxMsgsPerSubject: "Сколько сообщений держать по одному subject.",
+  maxMsgSize: "Максимальный размер одного сообщения в байтах.",
+  replicas: "Сколько копий стрима в кластере JetStream. 1 — без репликации.",
+  compression: "Сжимать ли блоки на диске. S2 экономит место, чуть грузит CPU.",
+  duplicateWindow:
+    "Окно дедупликации по заголовку Nats-Msg-Id. Повтор с тем же id внутри окна отбрасывается.",
+  firstSeqCfg: "С какого sequence начать нумерацию при создании стрима.",
+  allowDirect: "Читать сообщения по seq или last напрямую, минуя consumer.",
+  noAck: "Публиковать без подтверждения JetStream. Быстрее, но сообщение можно потерять.",
+  sealed: "Стрим закрыт: нельзя писать и менять конфигурацию.",
+  denyDelete: "Запретить удаление отдельных сообщений.",
+  denyPurge: "Запретить очистку (purge) всего стрима.",
+  allowRollup: "Разрешить заголовок Nats-Rollup: свернуть историю subject до одного сообщения.",
+  allowMsgTtl: "Разрешить TTL на отдельные сообщения через заголовок Nats-TTL.",
+  subjectDeleteMarkerTtl: "Как долго хранить маркер удаления subject после rollup или TTL.",
+  metadata: "Произвольные пары ключ=значение. На логику JetStream не влияют.",
+  cluster: "Raft-группа стрима и текущий лидер, который принимает записи.",
+  created: "Когда стрим создали на сервере.",
+} as const;
+
+function limitText(value: number, format?: (n: number) => string): string {
+  if (!value || value < 0) return "без лимита";
+  return format ? format(value) : value.toLocaleString("ru-RU");
+}
+
 function streamFormFrom(stream: NatsStream): StreamFormState {
   return {
     name: stream.name,
@@ -284,9 +253,7 @@ function streamFormFrom(stream: NatsStream): StreamFormState {
     maxMsgs: stream.max_msgs ? String(stream.max_msgs) : "",
     maxBytes: stream.max_bytes ? String(stream.max_bytes) : "",
     maxAgeSec: nsToSecInput(stream.max_age),
-    maxMsgsPerSubject: stream.max_msgs_per_subject
-      ? String(stream.max_msgs_per_subject)
-      : "",
+    maxMsgsPerSubject: stream.max_msgs_per_subject ? String(stream.max_msgs_per_subject) : "",
     maxMsgSize: stream.max_msg_size ? String(stream.max_msg_size) : "",
     discard: stream.discard,
     discardNewPerSubject: stream.discard_new_per_subject,
@@ -369,11 +336,6 @@ function toStreamWrite(form: StreamFormState): NatsStreamWrite {
   };
 }
 
-function jsonFileName(prefix: string, id: string): string {
-  const safe = id.replace(/[^\w.-]+/g, "_") || "settings";
-  return `${prefix}-${safe}.json`;
-}
-
 function toConsumerWrite(form: ConsumerFormState): NatsConsumerWrite {
   const durable = form.durable.trim();
   return {
@@ -409,25 +371,54 @@ function toConsumerWrite(form: ConsumerFormState): NatsConsumerWrite {
   };
 }
 
+function jsonFileName(prefix: string, id: string): string {
+  const safe = id.replace(/[^\w.-]+/g, "_") || "settings";
+  return `${prefix}-${safe}.json`;
+}
+
+function previewText(value: string, max = 80): string {
+  const one = value.replace(/\s+/g, " ").trim();
+  if (!one) return "—";
+  if (one.length <= max) return one;
+  return `${one.slice(0, max)}…`;
+}
+
+function ModalBackdrop({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  return (
+    <div className="nats-modal-backdrop" onClick={onClose}>
+      {children}
+    </div>
+  );
+}
 
 export default function NatsAdminPanel() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
+
+  const [activeTab, setActiveTab] = useState<MainTab>("explorer");
+  const [streamDetailTab, setStreamDetailTab] = useState<StreamDetailTab>("overview");
+
   const [account, setAccount] = useState<NatsAccount | null>(null);
   const [streams, setStreams] = useState<NatsStream[]>([]);
-  const [selectedName, setSelectedName] = useState("");
-  const [detail, setDetail] = useState<NatsStream | null>(null);
-  const [tab, setTab] = useState<DetailTab>("overview");
+  const [selectedStreamName, setSelectedStreamName] = useState("");
+  const [streamDetail, setStreamDetail] = useState<NatsStream | null>(null);
+
   const [consumers, setConsumers] = useState<NatsConsumer[]>([]);
-  const [selectedConsumer, setSelectedConsumer] = useState("");
+  const [consumersLoading, setConsumersLoading] = useState(false);
+
+  const [streamFilter, setStreamFilter] = useState("");
   const [subjectQuery, setSubjectQuery] = useState("");
+
+  const [dialog, setDialog] = useState<Dialog | null>(null);
+
+  // Forms
   const [streamForm, setStreamForm] = useState<StreamFormState>(emptyStreamForm);
   const [consumerForm, setConsumerForm] = useState<ConsumerFormState>(emptyConsumerForm);
   const [publishForm, setPublishForm] = useState({ subject: "", data: "" });
-  const [filter, setFilter] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [creatingConsumer, setCreatingConsumer] = useState(false);
+  const [copiedKey, setCopiedKey] = useState("");
+
+  // Messages Pagination & Filters
   const [msgPage, setMsgPage] = useState(1);
   const [msgPageSize, setMsgPageSize] = useState(25);
   const [msgSubject, setMsgSubject] = useState("");
@@ -437,21 +428,14 @@ export default function NatsAdminPanel() {
   const [msgHideMissing, setMsgHideMissing] = useState(true);
   const [msgRows, setMsgRows] = useState<NatsMessageRow[]>([]);
   const [msgLoading, setMsgLoading] = useState(false);
-  const [msgOpenSeq, setMsgOpenSeq] = useState<number | null>(null);
 
-  const selected = useMemo(
-    () => detail ?? streams.find((s) => s.name === selectedName) ?? null,
-    [detail, streams, selectedName],
-  );
-
-  const consumerDetail = useMemo(
-    () =>
-      consumers.find((c) => (c.name || c.durable) === selectedConsumer) ?? null,
-    [consumers, selectedConsumer],
+  const selectedStream = useMemo(
+    () => streamDetail ?? streams.find((s) => s.name === selectedStreamName) ?? null,
+    [streamDetail, streams, selectedStreamName],
   );
 
   const filteredStreams = useMemo(() => {
-    const q = filter.trim().toLowerCase();
+    const q = streamFilter.trim().toLowerCase();
     if (!q) return streams;
     return streams.filter(
       (s) =>
@@ -459,12 +443,12 @@ export default function NatsAdminPanel() {
         s.description.toLowerCase().includes(q) ||
         s.subjects.some((sub) => sub.toLowerCase().includes(q)),
     );
-  }, [streams, filter]);
+  }, [streams, streamFilter]);
 
   const msgWindow = useMemo(() => {
-    const first = selected?.first_seq ?? 0;
-    const last = selected?.last_seq ?? 0;
-    if (!selected || last <= 0 || last < first) {
+    const first = selectedStream?.first_seq ?? 0;
+    const last = selectedStream?.last_seq ?? 0;
+    if (!selectedStream || last <= 0 || last < first) {
       return { start: 0, end: 0, span: 0, pages: 1, from: 0, to: 0 };
     }
     let rangeStart = Number(msgSeqFrom);
@@ -482,7 +466,7 @@ export default function NatsAdminPanel() {
     const end = rangeEnd - (page - 1) * msgPageSize;
     const start = Math.max(rangeStart, end - msgPageSize + 1);
     return { start, end, span, pages, from: rangeStart, to: rangeEnd };
-  }, [selected, msgSeqFrom, msgSeqTo, msgPage, msgPageSize]);
+  }, [selectedStream, msgSeqFrom, msgSeqTo, msgPage, msgPageSize]);
 
   const visibleMsgRows = useMemo(() => {
     const subject = msgSubject.trim().toLowerCase();
@@ -497,10 +481,24 @@ export default function NatsAdminPanel() {
       });
   }, [msgRows, msgSubject, msgPayload, msgHideMissing]);
 
-  const openMessage = useMemo(
-    () => msgRows.find((row) => row.seq === msgOpenSeq)?.msg ?? null,
-    [msgRows, msgOpenSeq],
-  );
+  const copyText = useCallback((key: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(""), 2000);
+  }, []);
+
+  const run = useCallback(async (action: () => Promise<void>, ok?: string) => {
+    setBusy(true);
+    try {
+      await action();
+      if (ok) notify.success(ok);
+    } catch (e) {
+      if (e instanceof Error && e.message === "cancelled") return;
+      notify.error(e instanceof Error ? e.message : "Ошибка NATS");
+    } finally {
+      setBusy(false);
+    }
+  }, [notify]);
 
   const loadOverview = useCallback(async (opts?: { select?: string; keepSelection?: boolean; viaInfo?: boolean; fresh?: boolean }) => {
     setLoading(true);
@@ -512,16 +510,15 @@ export default function NatsAdminPanel() {
       ]);
       setAccount(acc);
       setStreams(items);
-      setSelectedName((prev) => {
+      setSelectedStreamName((prev) => {
         if (opts?.select) return opts.select;
-        if (opts?.keepSelection === false) return "";
+        if (opts?.keepSelection === false) return items[0]?.name || "";
         if (prev && items.some((s) => s.name === prev)) return prev;
-        return "";
+        return items[0]?.name || "";
       });
-      if (opts?.select) setCreating(false);
       notify.clear();
       if (opts?.fresh) {
-        setDetail((prev) => {
+        setStreamDetail((prev) => {
           const name = opts.select || prev?.name;
           if (!name) return prev;
           return items.find((s) => s.name === name) ?? prev;
@@ -539,57 +536,49 @@ export default function NatsAdminPanel() {
     void loadOverview();
   }, [loadOverview]);
 
-  useEffect(() => {
-    if (!selectedName) {
-      setDetail(null);
+  const loadConsumersForStream = useCallback(async (name: string) => {
+    if (!name) return;
+    setConsumersLoading(true);
+    try {
+      const cons = await fetchConsumers(name);
+      setConsumers(cons);
+    } catch (e) {
       setConsumers([]);
-      setSelectedConsumer("");
-      setCreatingConsumer(false);
-      return;
+      notify.error(e instanceof Error ? e.message : "Не удалось загрузить consumers");
+    } finally {
+      setConsumersLoading(false);
     }
-    const fromList = streams.find((s) => s.name === selectedName);
-    if (fromList) {
-      setDetail(fromList);
-      setStreamForm(streamFormFrom(fromList));
-    }
-    let cancelled = false;
-    fetchConsumers(selectedName)
-      .then((cons) => {
-        if (!cancelled) setConsumers(cons);
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setConsumers([]);
-          notify.error(e instanceof Error ? e.message : "Не удалось загрузить consumers");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-    // Список стримов уже загружен — StreamInfo и ConsumerNames не нужны.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- только смена стрима
-  }, [selectedName]);
+  }, [notify]);
 
   useEffect(() => {
-    if (consumerDetail) setConsumerForm(consumerFormFrom(consumerDetail));
-  }, [consumerDetail]);
+    if (!selectedStreamName) {
+      setStreamDetail(null);
+      setConsumers([]);
+      return;
+    }
+    const found = streams.find((s) => s.name === selectedStreamName);
+    if (found) {
+      setStreamDetail(found);
+      setStreamForm(streamFormFrom(found));
+    }
+    void loadConsumersForStream(selectedStreamName);
+  }, [selectedStreamName, loadConsumersForStream]);
 
   useEffect(() => {
     setMsgPage(1);
-    setMsgOpenSeq(null);
     setMsgRows([]);
-  }, [selectedName]);
+  }, [selectedStreamName]);
 
   useEffect(() => {
-    if (tab !== "messages" || !selectedName || msgWindow.span <= 0) {
-      if (tab !== "messages") return;
+    if (streamDetailTab !== "messages" || !selectedStreamName || msgWindow.span <= 0) {
+      if (streamDetailTab !== "messages") return;
       setMsgRows([]);
       setMsgLoading(false);
       return;
     }
     let cancelled = false;
     setMsgLoading(true);
-    fetchMessageRange(selectedName, msgWindow.start, msgWindow.end)
+    fetchMessageRange(selectedStreamName, msgWindow.start, msgWindow.end)
       .then((rows) => {
         if (!cancelled) setMsgRows(rows);
       })
@@ -605,24 +594,11 @@ export default function NatsAdminPanel() {
     return () => {
       cancelled = true;
     };
-  }, [tab, selectedName, msgWindow.start, msgWindow.end, msgWindow.span, notify]);
+  }, [streamDetailTab, selectedStreamName, msgWindow.start, msgWindow.end, msgWindow.span, notify]);
 
   useEffect(() => {
     if (msgPage > msgWindow.pages) setMsgPage(msgWindow.pages);
   }, [msgPage, msgWindow.pages]);
-
-  async function run(action: () => Promise<void>, ok?: string) {
-    setBusy(true);
-    try {
-      await action();
-      if (ok) notify.success(ok);
-    } catch (e) {
-      if (e instanceof Error && e.message === "cancelled") return;
-      notify.error(e instanceof Error ? e.message : "Ошибка NATS");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   function onSaveStream(e: FormEvent) {
     e.preventDefault();
@@ -631,19 +607,19 @@ export default function NatsAdminPanel() {
       notify.error("Укажите имя стрима и хотя бы один subject");
       return;
     }
-    const isUpdate = Boolean(selected && selected.name === body.name);
+    const isUpdate = Boolean(selectedStream && selectedStream.name === body.name);
     void run(async () => {
       const saved = isUpdate
         ? await updateStream(body.name!, body)
         : await createStream(body);
-      setCreating(false);
-      await loadOverview({ select: saved.name });
+      setDialog(null);
+      await loadOverview({ select: saved.name, fresh: true });
     }, isUpdate ? `Стрим ${body.name} обновлён` : `Стрим ${body.name} создан`);
   }
 
   function onSaveConsumer(e: FormEvent) {
     e.preventDefault();
-    if (!selectedName) {
+    if (!selectedStreamName) {
       notify.error("Сначала выберите стрим");
       return;
     }
@@ -652,14 +628,15 @@ export default function NatsAdminPanel() {
       notify.error("Укажите durable-имя consumer");
       return;
     }
-    const isUpdate = consumers.some((c) => (c.name || c.durable) === body.durable);
+    const isUpdate = dialog?.kind === "edit-consumer";
     void run(async () => {
-      const saved = isUpdate
-        ? await updateConsumer(selectedName, body)
-        : await createConsumer(selectedName, body);
-      setConsumers(await fetchConsumers(selectedName));
-      setSelectedConsumer(saved.name || saved.durable);
-      setCreatingConsumer(false);
+      if (isUpdate) {
+        await updateConsumer(selectedStreamName, body);
+      } else {
+        await createConsumer(selectedStreamName, body);
+      }
+      setDialog(null);
+      await loadConsumersForStream(selectedStreamName);
       await loadOverview();
     }, isUpdate ? `Consumer ${body.durable} обновлён` : `Consumer ${body.durable} создан`);
   }
@@ -674,7 +651,7 @@ export default function NatsAdminPanel() {
     void run(async () => {
       await publishMessage(subject, publishForm.data);
       setPublishForm((prev) => ({ ...prev, data: "" }));
-      await loadOverview();
+      await loadOverview({ fresh: true });
     }, `Опубликовано в ${subject}`);
   }
 
@@ -684,73 +661,15 @@ export default function NatsAdminPanel() {
     if (!subject) return;
     void run(async () => {
       const name = await streamNameBySubject(subject);
-      setSelectedName(name);
-      setCreating(false);
-      setTab("overview");
+      setSelectedStreamName(name);
+      setStreamDetailTab("overview");
       notify.success(`Subject «${subject}» → стрим ${name}`);
     });
   }
 
-  function refreshSelectedStream() {
-    if (!selectedName) return;
-    void run(async () => {
-      const info = await fetchStream(selectedName, { fresh: true });
-      setDetail(info);
-      setStreams((prev) => prev.map((s) => (s.name === info.name ? info : s)));
-      setStreamForm(streamFormFrom(info));
-      setConsumers(await fetchConsumers(selectedName));
-    }, `Стрим ${selectedName} обновлён`);
-  }
-
-  function refreshSelectedConsumer() {
-    if (!selectedName) return;
-    void run(async () => {
-      const list = await fetchConsumers(selectedName);
-      setConsumers(list);
-      if (!selectedConsumer) return;
-      const found = list.find((c) => (c.name || c.durable) === selectedConsumer);
-      if (found) setConsumerForm(consumerFormFrom(found));
-    }, selectedConsumer ? `Consumer ${selectedConsumer} обновлён` : "Consumers обновлены");
-  }
-
-  function goBack() {
-    if (tab === "consumers" && (selectedConsumer || creatingConsumer)) {
-      setSelectedConsumer("");
-      setCreatingConsumer(false);
-      return;
-    }
-    setCreating(false);
-    setSelectedName("");
-    setTab("overview");
-    setSelectedConsumer("");
-    setCreatingConsumer(false);
-  }
-
-  function openStream(name: string) {
-    setCreating(false);
-    setSelectedName(name);
-    setTab("overview");
-  }
-
-  function limitLabel(value: number, max: number): string {
-    if (max < 0) return `${value} / ∞`;
-    if (max > 0) return `${value} / ${max}`;
-    return String(value);
-  }
-
-  const consumerSettingsOpen =
-    tab === "consumers" && (Boolean(selectedConsumer) || creatingConsumer);
-
   async function applySettingsFile(file: NatsSettingsFile, okPrefix: string) {
-    if (
-      !confirm(
-        "Применить JSON к JetStream? Существующие стримы и consumers обновятся, новые создадутся. Сообщения не изменятся.",
-      )
-    ) {
-      throw new Error("cancelled");
-    }
     const result = await applyNatsSettings(file);
-    await loadOverview({ keepSelection: false });
+    await loadOverview({ keepSelection: false, fresh: true });
     if (result.errors.length) {
       throw new Error(`${formatApplyResult(result)}. ${result.errors[0]}`);
     }
@@ -775,22 +694,13 @@ export default function NatsAdminPanel() {
 
   function onExportConsumersRow(stream: NatsStream) {
     void run(async () => {
-      const consumers = (await fetchConsumers(stream.name)).map(consumerToWrite);
+      const cons = (await fetchConsumers(stream.name)).map(consumerToWrite);
       downloadJson(
         jsonFileName("consumers", stream.name),
-        buildNatsSettings([{ config: streamToWrite(stream), consumers }]),
+        buildNatsSettings([{ config: streamToWrite(stream), consumers: cons }]),
       );
-      notify.success(`Consumers ${stream.name}: ${consumers.length}`);
+      notify.success(`Consumers ${stream.name}: ${cons.length}`);
     });
-  }
-
-  function onDeleteStreamRow(stream: NatsStream) {
-    if (stream.deny_delete) return;
-    if (!confirm(`Удалить стрим ${stream.name}?`)) return;
-    void run(async () => {
-      await deleteStream(stream.name);
-      await loadOverview({ keepSelection: false });
-    }, `Стрим ${stream.name} удалён`);
   }
 
   function onImportJson() {
@@ -827,1606 +737,1272 @@ export default function NatsAdminPanel() {
   }
 
   return (
-    <section className="panel-page nats-panel">
-      <header className="nats-bar">
-        {creating || selectedName ? (
-          <button type="button" className="btn" onClick={goBack} disabled={busy}>
-            Назад
-          </button>
-        ) : null}
-        <h1>
-          {creating
-            ? "Новый стрим"
-            : creatingConsumer && tab === "consumers"
-              ? "Новый consumer"
-              : selectedConsumer && tab === "consumers"
-                ? selectedConsumer
-                : selectedName || "Админка NATS"}
-        </h1>
-        {account && !creating && !selectedName ? (
-          <div className="nats-stats" aria-label="Аккаунт JetStream">
+    <div className="nats-panel">
+      {/* Header Bar */}
+      <header className="nats-header">
+        <div className="nats-title-wrap">
+          <h1>NATS JetStream Studio</h1>
+          <div className={`nats-live-indicator ${account ? "" : "is-offline"}`}>
+            <span className="dot" />
+            {account ? "Connected" : loading ? "Connecting..." : "Offline"}
+          </div>
+        </div>
+
+        {account && (
+          <div className="nats-stats-ribbon">
             <span className="nats-chip" title="Стримы на аккаунте / лимит">
-              <span>стримы</span>
-              {limitLabel(account.streams, account.max_streams)}
+              <span className="label">стримы</span>
+              <strong>{account.streams}{account.max_streams > 0 ? ` / ${account.max_streams}` : ""}</strong>
             </span>
             <span className="nats-chip" title="Consumers / лимит">
-              <span>cons</span>
-              {limitLabel(account.consumers, account.max_consumers)}
+              <span className="label">cons</span>
+              <strong>{account.consumers}{account.max_consumers > 0 ? ` / ${account.max_consumers}` : ""}</strong>
             </span>
             <span className="nats-chip" title="Память JetStream">
-              <span>RAM</span>
-              {formatBytes(account.memory)}
+              <span className="label">ram</span>
+              <strong>{formatBytes(account.memory)}</strong>
             </span>
             <span className="nats-chip" title="Диск JetStream">
-              <span>диск</span>
-              {formatBytes(account.storage)}
+              <span className="label">диск</span>
+              <strong>{formatBytes(account.storage)}</strong>
             </span>
-            <span
-              className="nats-chip"
-              title="Запросы к JetStream API этого аккаунта и сколько из них с ошибкой"
-            >
-              <span>JS API</span>
-              {account.api_total}/{account.api_errors}
+            <span className="nats-chip" title="Запросы к JetStream API этого аккаунта и ошибки">
+              <span className="label">js api</span>
+              <strong>{account.api_total} / {account.api_errors}</strong>
             </span>
           </div>
-        ) : null}
-        <div className="nats-actions">
-          {!creating && !selectedName ? (
-            <>
-              <button
-                type="button"
-                className="btn"
-                disabled={loading || busy}
-                onClick={() => void loadOverview({ fresh: true })}
-              >
-                Обновить
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={busy}
-                title="Скачать все стримы и consumers в JSON"
-                onClick={onExportJson}
-              >
-                Выгрузить JSON
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={busy}
-                title="Загрузить настройки из JSON"
-                onClick={onImportJson}
-              >
-                Загрузить JSON
-              </button>
-              <button
-                type="button"
-                className="btn primary"
-                disabled={busy}
-                onClick={() => {
-                  setCreating(true);
-                  setSelectedName("");
-                  setTab("config");
-                  setStreamForm(emptyStreamForm());
-                }}
-              >
-                Новый стрим
-              </button>
-            </>
-          ) : (
-            <>
-              {!creating && selectedName && !consumerSettingsOpen ? (
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={busy || loading}
-                  onClick={() => {
-                    if (tab === "config") {
-                      void refreshSelectedStream();
-                      return;
-                    }
-                    if (tab === "consumers") {
-                      void run(async () => {
-                        setConsumers(await fetchConsumers(selectedName));
-                      }, "Consumers обновлены");
-                      return;
-                    }
-                    void loadOverview({ fresh: true });
-                  }}
-                >
-                  Обновить
-                </button>
-              ) : null}
-              {consumerSettingsOpen && !creatingConsumer ? (
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={busy}
-                  onClick={() => void refreshSelectedConsumer()}
-                >
-                  Обновить
-                </button>
-              ) : null}
-              {creating || tab === "config" ? (
-                <button
-                  type="submit"
-                  form="nats-stream-form"
-                  className="btn primary"
-                  disabled={busy}
-                >
-                  {selected && selected.name === streamForm.name.trim() ? "Сохранить" : "Создать"}
-                </button>
-              ) : null}
-              {consumerSettingsOpen ? (
-                <button
-                  type="submit"
-                  form="nats-consumer-form"
-                  className="btn primary"
-                  disabled={busy}
-                >
-                  {selectedConsumer ? "Сохранить" : "Создать"}
-                </button>
-              ) : null}
-              {tab === "consumers" && selectedName && !creating && !consumerSettingsOpen ? (
-                <button
-                  type="button"
-                  className="btn primary"
-                  disabled={busy}
-                  onClick={() => {
-                    setSelectedConsumer("");
-                    setCreatingConsumer(true);
-                    setConsumerForm(emptyConsumerForm());
-                  }}
-                >
-                  Новый consumer
-                </button>
-              ) : null}
-            </>
-          )}
+        )}
+
+        <div className="nats-header-actions">
+          {/* Main Nav Tabs inside Header Actions */}
+          <nav className="nats-nav-tabs">
+            <button
+              type="button"
+              className={`nats-nav-tab ${activeTab === "explorer" ? "is-active" : ""}`}
+              onClick={() => setActiveTab("explorer")}
+            >
+              🗂 Стримы
+              <span className="nats-tab-badge">{streams.length}</span>
+            </button>
+            <button
+              type="button"
+              className={`nats-nav-tab ${activeTab === "publish" ? "is-active" : ""}`}
+              onClick={() => setActiveTab("publish")}
+            >
+              📤 Публикация
+            </button>
+            <button
+              type="button"
+              className={`nats-nav-tab ${activeTab === "system" ? "is-active" : ""}`}
+              onClick={() => setActiveTab("system")}
+            >
+              ⚙️ Бэкапы
+            </button>
+          </nav>
+
+          <button
+            type="button"
+            className="secondary-btn sm"
+            disabled={loading || busy}
+            onClick={() => void loadOverview({ fresh: true })}
+            title="Обновить данные NATS"
+          >
+            🔄 Обновить
+          </button>
         </div>
       </header>
 
-
-      {creating || selectedName ? (
-        <div className="nats-page">
-          <div className="nats-detail">
-            <div className="nats-tabs">
-              {(
-                [
-                  ["overview", "Обзор"],
-                  ["config", "Конфиг"],
-                  ["consumers", "Consumers"],
-                  ["messages", "Сообщения"],
-                ] as const
-              ).map(([id, label]) => (
+      {/* Main Content Area */}
+      <main className="nats-content">
+        {/* ================= TAB 1: EXPLORER ================= */}
+        {activeTab === "explorer" && (
+          <div className="nats-explorer">
+            {/* Left Pane: Streams List */}
+            <section className="nats-pane">
+              <div className="nats-pane-header">
+                <h3>🌊 Стримы ({filteredStreams.length})</h3>
                 <button
-                  key={id}
                   type="button"
-                  className={tab === id ? "is-active" : ""}
-                  onClick={() => setTab(id)}
+                  className="primary-btn sm"
+                  onClick={() => {
+                    setStreamForm(emptyStreamForm());
+                    setDialog({ kind: "create-stream" });
+                  }}
+                  title="Создать новый стрим"
                 >
-                  {label}
+                  + Стрим
                 </button>
-              ))}
-            </div>
+              </div>
 
-            {tab === "overview" ? (
-              selected ? (
-                <div className="nats-pane">
-                  <StreamOverview stream={selected} />
-                  <div className="nats-actions">
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={busy || selected.deny_purge}
-                      title={
-                        selected.deny_purge
-                          ? STREAM_HINTS.denyPurge
-                          : "Удалить все сообщения, конфигурация стрима останется"
-                      }
+              <div className="nats-search-box">
+                <input
+                  type="text"
+                  placeholder="Поиск стримов, subjects..."
+                  value={streamFilter}
+                  onChange={(e) => setStreamFilter(e.target.value)}
+                />
+                {streamFilter && (
+                  <button type="button" className="nats-search-clear" onClick={() => setStreamFilter("")}>
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <div className="nats-tree-list">
+                {filteredStreams.map((stream) => {
+                  const isSelected = stream.name === selectedStreamName;
+                  return (
+                    <div
+                      key={stream.name}
+                      className={`nats-tree-item ${isSelected ? "is-selected" : ""}`}
                       onClick={() => {
-                        if (!confirm(`Очистить стрим ${selected.name}?`)) return;
-                        void run(async () => {
-                          await purgeStream(selected.name);
-                          await loadOverview();
-                        }, `Стрим ${selected.name} очищен`);
+                        setSelectedStreamName(stream.name);
+                        setStreamDetail(stream);
+                        setStreamForm(streamFormFrom(stream));
                       }}
                     >
-                      Purge
-                    </button>
-                    <button
-                      type="button"
-                      className="btn danger"
-                      disabled={busy || selected.deny_delete}
-                      title={
-                        selected.deny_delete
-                          ? STREAM_HINTS.denyDelete
-                          : "Удалить стрим вместе с сообщениями и consumers"
-                      }
-                      onClick={() => {
-                        if (!confirm(`Удалить стрим ${selected.name}?`)) return;
-                        void run(async () => {
-                          await deleteStream(selected.name);
-                          goBack();
-                          await loadOverview({ keepSelection: false });
-                        }, `Стрим ${selected.name} удалён`);
-                      }}
-                    >
-                      Удалить
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <p className="hint">Выберите стрим слева или создайте новый на вкладке «Конфиг».</p>
-              )
-            ) : null}
-
-            {tab === "config" ? (
-              <form id="nats-stream-form" className="nats-pane nats-form" onSubmit={onSaveStream}>
-                <div className="nats-form-head">
-                  <h3>{selected && selected.name === streamForm.name.trim() ? "Настройки стрима" : "Новый стрим"}</h3>
-                </div>
-
-                <FormSection title="Основные" hint="Имя, описание и какие subject попадают в стрим" defaultOpen>
-                  <div className="filters-row">
-                    <Field label="Имя" hint={STREAM_HINTS.name}>
-                      <input
-                        value={streamForm.name}
-                        disabled={Boolean(selected && selected.name === streamForm.name)}
-                        onChange={(e) => setStreamForm({ ...streamForm, name: e.target.value })}
-                      />
-                    </Field>
-                    <Field label="Описание" hint={STREAM_HINTS.description}>
-                      <input
-                        value={streamForm.description}
-                        onChange={(e) =>
-                          setStreamForm({ ...streamForm, description: e.target.value })
-                        }
-                      />
-                    </Field>
-                  </div>
-                  <Field label="Subjects" hint={STREAM_HINTS.subjects}>
-                    <textarea
-                      value={streamForm.subjects}
-                      onChange={(e) => setStreamForm({ ...streamForm, subjects: e.target.value })}
-                      placeholder="TrB.HistoricCandle.Task.*.*"
-                    />
-                  </Field>
-                </FormSection>
-
-                <FormSection title="Политика хранения" hint="Как и где хранить сообщения, что делать при переполнении" defaultOpen>
-                  <div className="filters-row">
-                    <Select
-                      label="Retention"
-                      hint={STREAM_HINTS.retention}
-                      value={streamForm.retention}
-                      options={RETENTION_OPTIONS}
-                      onChange={(v) => setStreamForm({ ...streamForm, retention: v })}
-                    />
-                    <Select
-                      label="Storage"
-                      hint={STREAM_HINTS.storage}
-                      value={streamForm.storage}
-                      options={STORAGE_OPTIONS}
-                      onChange={(v) => setStreamForm({ ...streamForm, storage: v })}
-                    />
-                    <Select
-                      label="Discard"
-                      hint={STREAM_HINTS.discard}
-                      value={streamForm.discard}
-                      options={DISCARD_OPTIONS}
-                      onChange={(v) => setStreamForm({ ...streamForm, discard: v })}
-                    />
-                    <Select
-                      label="Compression"
-                      hint={STREAM_HINTS.compression}
-                      value={streamForm.compression}
-                      options={COMPRESSION_OPTIONS}
-                      onChange={(v) => setStreamForm({ ...streamForm, compression: v })}
-                    />
-                    <Field label="Replicas" hint={STREAM_HINTS.replicas}>
-                      <input
-                        value={streamForm.replicas}
-                        onChange={(e) =>
-                          setStreamForm({ ...streamForm, replicas: e.target.value })
-                        }
-                      />
-                    </Field>
-                  </div>
-                </FormSection>
-
-                <FormSection title="Лимиты" hint="Пороги, после которых retention и discard начинают вытеснять данные. Пусто = без лимита">
-                  <div className="filters-row">
-                    <Field label="Max consumers" hint={STREAM_HINTS.maxConsumers}>
-                      <input
-                        value={streamForm.maxConsumers}
-                        onChange={(e) =>
-                          setStreamForm({ ...streamForm, maxConsumers: e.target.value })
-                        }
-                      />
-                    </Field>
-                    <Field label="Max msgs" hint={STREAM_HINTS.maxMsgs}>
-                      <input
-                        value={streamForm.maxMsgs}
-                        onChange={(e) =>
-                          setStreamForm({ ...streamForm, maxMsgs: e.target.value })
-                        }
-                      />
-                    </Field>
-                    <Field label="Max bytes" hint={STREAM_HINTS.maxBytes}>
-                      <input
-                        value={streamForm.maxBytes}
-                        onChange={(e) =>
-                          setStreamForm({ ...streamForm, maxBytes: e.target.value })
-                        }
-                      />
-                    </Field>
-                    <Field label="Max age, сек" hint={STREAM_HINTS.maxAge}>
-                      <input
-                        value={streamForm.maxAgeSec}
-                        onChange={(e) =>
-                          setStreamForm({ ...streamForm, maxAgeSec: e.target.value })
-                        }
-                      />
-                    </Field>
-                    <Field label="Max msgs/subject" hint={STREAM_HINTS.maxMsgsPerSubject}>
-                      <input
-                        value={streamForm.maxMsgsPerSubject}
-                        onChange={(e) =>
-                          setStreamForm({
-                            ...streamForm,
-                            maxMsgsPerSubject: e.target.value,
-                          })
-                        }
-                      />
-                    </Field>
-                    <Field label="Max msg size" hint={STREAM_HINTS.maxMsgSize}>
-                      <input
-                        value={streamForm.maxMsgSize}
-                        onChange={(e) =>
-                          setStreamForm({ ...streamForm, maxMsgSize: e.target.value })
-                        }
-                      />
-                    </Field>
-                  </div>
-                </FormSection>
-
-                <FormSection title="Дедупликация и нумерация" hint="Окно Nats-Msg-Id и стартовый sequence">
-                  <div className="filters-row">
-                    <Field label="Duplicate window, сек" hint={STREAM_HINTS.duplicateWindow}>
-                      <input
-                        value={streamForm.duplicateWindowSec}
-                        onChange={(e) =>
-                          setStreamForm({
-                            ...streamForm,
-                            duplicateWindowSec: e.target.value,
-                          })
-                        }
-                      />
-                    </Field>
-                    <Field label="First seq" hint={STREAM_HINTS.firstSeqCfg}>
-                      <input
-                        value={streamForm.firstSeq}
-                        onChange={(e) =>
-                          setStreamForm({ ...streamForm, firstSeq: e.target.value })
-                        }
-                      />
-                    </Field>
-                    <Field label="Subject delete marker TTL, сек" hint={STREAM_HINTS.subjectDeleteMarkerTtl}>
-                      <input
-                        value={streamForm.subjectDeleteMarkerTtlSec}
-                        onChange={(e) =>
-                          setStreamForm({
-                            ...streamForm,
-                            subjectDeleteMarkerTtlSec: e.target.value,
-                          })
-                        }
-                      />
-                    </Field>
-                  </div>
-                </FormSection>
-
-                <FormSection title="Доступ и защита" hint="Ограничения на чтение, запись и удаление">
-                  <div className="nats-flag-grid">
-                    <Check
-                      label="Allow direct"
-                      hint={STREAM_HINTS.allowDirect}
-                      checked={streamForm.allowDirect}
-                      onChange={(v) => setStreamForm({ ...streamForm, allowDirect: v })}
-                    />
-                    <Check
-                      label="No ack"
-                      hint={STREAM_HINTS.noAck}
-                      checked={streamForm.noAck}
-                      onChange={(v) => setStreamForm({ ...streamForm, noAck: v })}
-                    />
-                    <Check
-                      label="Discard new per subject"
-                      hint={STREAM_HINTS.discardNewPerSubject}
-                      checked={streamForm.discardNewPerSubject}
-                      onChange={(v) =>
-                        setStreamForm({ ...streamForm, discardNewPerSubject: v })
-                      }
-                    />
-                    <Check
-                      label="Sealed"
-                      hint={STREAM_HINTS.sealed}
-                      checked={streamForm.sealed}
-                      onChange={(v) => setStreamForm({ ...streamForm, sealed: v })}
-                    />
-                    <Check
-                      label="Deny delete"
-                      hint={STREAM_HINTS.denyDelete}
-                      checked={streamForm.denyDelete}
-                      onChange={(v) => setStreamForm({ ...streamForm, denyDelete: v })}
-                    />
-                    <Check
-                      label="Deny purge"
-                      hint={STREAM_HINTS.denyPurge}
-                      checked={streamForm.denyPurge}
-                      onChange={(v) => setStreamForm({ ...streamForm, denyPurge: v })}
-                    />
-                    <Check
-                      label="Allow rollup"
-                      hint={STREAM_HINTS.allowRollup}
-                      checked={streamForm.allowRollup}
-                      onChange={(v) => setStreamForm({ ...streamForm, allowRollup: v })}
-                    />
-                    <Check
-                      label="Allow msg TTL"
-                      hint={STREAM_HINTS.allowMsgTtl}
-                      checked={streamForm.allowMsgTtl}
-                      onChange={(v) => setStreamForm({ ...streamForm, allowMsgTtl: v })}
-                    />
-                  </div>
-                </FormSection>
-
-                <FormSection title="Metadata" hint={STREAM_HINTS.metadata}>
-                  <Field label="key=value, по строке" hint={STREAM_HINTS.metadata}>
-                    <textarea
-                      value={streamForm.metadata}
-                      onChange={(e) =>
-                        setStreamForm({ ...streamForm, metadata: e.target.value })
-                      }
-                    />
-                  </Field>
-                </FormSection>
-              </form>
-            ) : null}
-
-            {tab === "consumers" ? (
-              <div className="nats-pane">
-                {!selected ? (
-                  <p className="hint">Выберите стрим.</p>
-                ) : consumerSettingsOpen ? (
-                    <form id="nats-consumer-form" className="nats-form" onSubmit={onSaveConsumer}>
-                      <div className="nats-form-head">
-                        <h3>
-                          {selectedConsumer
-                            ? `Настройки ${selectedConsumer}`
-                            : "Новый consumer"}
-                        </h3>
+                      <div className="nats-tree-item-main">
+                        <span className="nats-tree-name">
+                          {stream.storage === 1 ? "💾" : "📁"} {stream.name}
+                        </span>
+                        <span className={`nats-tag ${stream.storage === 1 ? "is-mem" : ""}`}>
+                          {stream.storage === 1 ? "Memory" : "File"}
+                        </span>
                       </div>
-                      {consumerDetail ? (
-                        <FormSection title="Состояние" hint="Текущие счётчики выбранного consumer" defaultOpen>
-                          <div className="nats-rows">
-                            <div className="nats-row">
-                              <span className="nats-row-k">Создан</span>
-                              <span className="nats-row-v">{formatDateTime(consumerDetail.created)}</span>
-                            </div>
-                            <div className="nats-row">
-                              <span className="nats-row-k">Delivered</span>
-                              <span className="nats-row-v">
-                                stream {consumerDetail.delivered_stream_seq} · consumer{" "}
-                                {consumerDetail.delivered_consumer_seq}
-                              </span>
-                            </div>
-                            <div className="nats-row">
-                              <span className="nats-row-k">Ack floor</span>
-                              <span className="nats-row-v">
-                                stream {consumerDetail.ack_floor_stream_seq} · consumer{" "}
-                                {consumerDetail.ack_floor_consumer_seq}
-                              </span>
-                            </div>
-                            <div className="nats-row">
-                              <span className="nats-row-k">Waiting</span>
-                              <span className="nats-row-v">
-                                {consumerDetail.num_waiting}
-                                {consumerDetail.push_bound ? " · push-bound" : ""}
-                              </span>
+                      <div className="nats-tree-item-meta">
+                        <span>{stream.msgs.toLocaleString()} msgs</span>
+                        <span>• {formatBytes(stream.bytes)}</span>
+                        <span>• {stream.consumer_count} cons</span>
+                        {!stream.deny_delete && (
+                          <button
+                            type="button"
+                            className="danger-btn sm"
+                            style={{ marginLeft: "auto", padding: "0.1rem 0.35rem", fontSize: "0.7rem", lineHeight: 1 }}
+                            title={`Удалить стрим ${stream.name}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDialog({
+                                kind: "confirm-danger",
+                                title: `Удаление стрима ${stream.name}`,
+                                prompt: `Вы действительно хотите удалить стрим "${stream.name}" вместе со всеми сообщениями и consumers?`,
+                                actionName: "Удалить стрим",
+                                onConfirm: async () => {
+                                  await deleteStream(stream.name);
+                                  await loadOverview({ keepSelection: false, fresh: true });
+                                },
+                              });
+                            }}
+                          >
+                            🗑
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* Right Pane: Stream Detail */}
+            <section className="nats-pane nats-stream-detail">
+              {selectedStream ? (
+                <>
+                  <div className="nats-stream-detail-header">
+                    <div className="nats-stream-title-row">
+                      <div className="nats-stream-title-left">
+                        <h2>{selectedStream.name}</h2>
+                        <span className={`nats-tag ${selectedStream.storage === 1 ? "is-mem" : ""}`}>
+                          {enumLabel(STORAGE_OPTIONS, selectedStream.storage)}
+                        </span>
+                        <span className="nats-tag">
+                          {enumLabel(RETENTION_OPTIONS, selectedStream.retention)}
+                        </span>
+                      </div>
+
+                      <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          className="secondary-btn sm"
+                          disabled={busy || selectedStream.deny_purge}
+                          onClick={() => {
+                            setDialog({
+                              kind: "confirm-danger",
+                              title: `Очистка стрима ${selectedStream.name}`,
+                              prompt: `Очистить все сообщения в стриме "${selectedStream.name}"? Конфигурация стрима и consumers сохранятся.`,
+                              actionName: "Очистить сообщения (Purge)",
+                              onConfirm: async () => {
+                                await purgeStream(selectedStream.name);
+                                await loadOverview({ fresh: true });
+                              },
+                            });
+                          }}
+                          title={selectedStream.deny_purge ? STREAM_HINTS.denyPurge : "Очистить все сообщения в стриме"}
+                        >
+                          🧹 Purge
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-btn sm"
+                          onClick={() => onExportStreamRow(selectedStream)}
+                          title="Скачать JSON-конфиг стрима"
+                        >
+                          📥 Экспорт JSON
+                        </button>
+                        {!selectedStream.deny_delete && (
+                          <button
+                            type="button"
+                            className="danger-btn sm"
+                            disabled={busy}
+                            onClick={() => {
+                              setDialog({
+                                kind: "confirm-danger",
+                                title: `Удаление стрима ${selectedStream.name}`,
+                                prompt: `Вы действительно хотите удалить стрим "${selectedStream.name}" со всеми сообщениями и consumers?`,
+                                actionName: "Удалить стрим",
+                                onConfirm: async () => {
+                                  await deleteStream(selectedStream.name);
+                                  await loadOverview({ keepSelection: false, fresh: true });
+                                },
+                              });
+                            }}
+                          >
+                            🗑 Удалить
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {selectedStream.description && (
+                      <p className="nats-stream-desc">{selectedStream.description}</p>
+                    )}
+
+                    <div className="nats-stream-stats-bar">
+                      <div className="stat-item">
+                        <span className="lbl">Сообщения:</span>
+                        <span className="val">{selectedStream.msgs.toLocaleString()}</span>
+                      </div>
+                      <div className="stat-item">
+                        <span className="lbl">Размер:</span>
+                        <span className="val">{formatBytes(selectedStream.bytes)}</span>
+                      </div>
+                      <div className="stat-item">
+                        <span className="lbl">Seq:</span>
+                        <span className="val">{selectedStream.first_seq} .. {selectedStream.last_seq}</span>
+                      </div>
+                      <div className="stat-item">
+                        <span className="lbl">Consumers:</span>
+                        <span className="val">{selectedStream.consumer_count}</span>
+                      </div>
+                      <div className="stat-item">
+                        <span className="lbl">Subjects:</span>
+                        <span className="val">{selectedStream.num_subjects}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sub-nav inside stream view */}
+                  <div className="nats-sub-nav">
+                    <button
+                      type="button"
+                      className={`nats-sub-tab ${streamDetailTab === "overview" ? "is-active" : ""}`}
+                      onClick={() => setStreamDetailTab("overview")}
+                    >
+                      📊 Обзор
+                    </button>
+                    <button
+                      type="button"
+                      className={`nats-sub-tab ${streamDetailTab === "config" ? "is-active" : ""}`}
+                      onClick={() => {
+                        setStreamForm(streamFormFrom(selectedStream));
+                        setStreamDetailTab("config");
+                      }}
+                    >
+                      ⚙️ Конфигурация
+                    </button>
+                    <button
+                      type="button"
+                      className={`nats-sub-tab ${streamDetailTab === "consumers" ? "is-active" : ""}`}
+                      onClick={() => {
+                        setStreamDetailTab("consumers");
+                        loadConsumersForStream(selectedStream.name);
+                      }}
+                    >
+                      👥 Consumers ({consumers.length})
+                    </button>
+                    <button
+                      type="button"
+                      className={`nats-sub-tab ${streamDetailTab === "messages" ? "is-active" : ""}`}
+                      onClick={() => setStreamDetailTab("messages")}
+                    >
+                      ✉️ Сообщения ({selectedStream.msgs.toLocaleString()})
+                    </button>
+                    <button
+                      type="button"
+                      className={`nats-sub-tab ${streamDetailTab === "json" ? "is-active" : ""}`}
+                      onClick={() => setStreamDetailTab("json")}
+                    >
+                      📜 JSON
+                    </button>
+                  </div>
+
+                  {/* Sub-view Area */}
+                  <div className="nats-sub-view">
+                    {/* Sub-tab 1: Overview */}
+                    {streamDetailTab === "overview" && (
+                      <div className="nats-overview-view">
+                        <div className="nats-stats-grid">
+                          <div className="nats-stat-card">
+                            <span className="nats-stat-lbl">Сообщения</span>
+                            <span className="nats-stat-val">{selectedStream.msgs.toLocaleString()}</span>
+                            <span className="nats-stat-sub">{limitText(selectedStream.max_msgs, (n) => `лимит ${n.toLocaleString()}`)}</span>
+                            {selectedStream.max_msgs > 0 && (
+                              <div className="nats-progress-bar">
+                                <div
+                                  className={`nats-progress-fill ${selectedStream.msgs / selectedStream.max_msgs > 0.85 ? "is-danger" : ""}`}
+                                  style={{ width: `${Math.min(100, (selectedStream.msgs / selectedStream.max_msgs) * 100)}%` }}
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="nats-stat-card">
+                            <span className="nats-stat-lbl">Объём хранилища</span>
+                            <span className="nats-stat-val">{formatBytes(selectedStream.bytes)}</span>
+                            <span className="nats-stat-sub">{limitText(selectedStream.max_bytes, (n) => `лимит ${formatBytes(n)}`)}</span>
+                            {selectedStream.max_bytes > 0 && (
+                              <div className="nats-progress-bar">
+                                <div
+                                  className={`nats-progress-fill ${selectedStream.bytes / selectedStream.max_bytes > 0.85 ? "is-danger" : ""}`}
+                                  style={{ width: `${Math.min(100, (selectedStream.bytes / selectedStream.max_bytes) * 100)}%` }}
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="nats-stat-card">
+                            <span className="nats-stat-lbl">Consumers</span>
+                            <span className="nats-stat-val">{selectedStream.consumer_count}</span>
+                            <span className="nats-stat-sub">{limitText(selectedStream.max_consumers, (n) => `лимит ${n}`)}</span>
+                          </div>
+
+                          <div className="nats-stat-card">
+                            <span className="nats-stat-lbl">Уникальные Subjects</span>
+                            <span className="nats-stat-val">{selectedStream.num_subjects}</span>
+                            <span className="nats-stat-sub">{limitText(selectedStream.max_msgs_per_subject, (n) => `макс. ${n} на subject`)}</span>
+                          </div>
+                        </div>
+
+                        {/* Subjects Card */}
+                        <div className="nats-card">
+                          <div className="nats-card-head">
+                            <h4>🎯 Шаблоны Subjects ({selectedStream.subjects.length})</h4>
+                          </div>
+                          <div className="nats-card-body">
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                              {selectedStream.subjects.map((sub) => (
+                                <span key={sub} className="nats-chip mono">
+                                  {sub}
+                                </span>
+                              ))}
                             </div>
                           </div>
-                        </FormSection>
-                      ) : null}
-                      <FormSection title="Основные" hint="Имя, описание и какие сообщения видит consumer" defaultOpen>
-                        <div className="filters-row">
-                          <Field label="Durable" hint={CONSUMER_HINTS.durable}>
-                            <input
-                              value={consumerForm.durable}
-                              disabled={Boolean(selectedConsumer)}
-                              onChange={(e) =>
-                                setConsumerForm({ ...consumerForm, durable: e.target.value })
-                              }
-                            />
-                          </Field>
-                          <Field label="Описание" hint={CONSUMER_HINTS.description}>
-                            <input
-                              value={consumerForm.description}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  description: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
                         </div>
-                        <div className="filters-row">
-                          <Field label="Filter subject" hint={CONSUMER_HINTS.filterSubject}>
-                            <input
-                              value={consumerForm.filterSubject}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  filterSubject: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Filter subjects" hint={CONSUMER_HINTS.filterSubjects}>
-                            <input
-                              value={consumerForm.filterSubjects}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  filterSubjects: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
+
+                        {/* Sequence and Lifecycle */}
+                        <div className="nats-card">
+                          <div className="nats-card-head">
+                            <h4>⏱ Последовательность & Время</h4>
+                          </div>
+                          <div className="nats-card-body" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.6rem" }}>
+                            <div>
+                              <span style={{ fontSize: "0.72rem", color: "var(--muted, #a99bb8)", textTransform: "uppercase" }}>Первое сообщение (First Seq)</span>
+                              <div style={{ fontSize: "1rem", fontWeight: 700, color: "#fff" }}>{selectedStream.first_seq}</div>
+                              <div style={{ fontSize: "0.72rem", color: "var(--muted, #a99bb8)" }}>{formatDateTime(selectedStream.first_ts)}</div>
+                            </div>
+                            <div>
+                              <span style={{ fontSize: "0.72rem", color: "var(--muted, #a99bb8)", textTransform: "uppercase" }}>Последнее сообщение (Last Seq)</span>
+                              <div style={{ fontSize: "1rem", fontWeight: 700, color: "#fff" }}>{selectedStream.last_seq}</div>
+                              <div style={{ fontSize: "0.72rem", color: "var(--muted, #a99bb8)" }}>{formatDateTime(selectedStream.last_ts)}</div>
+                            </div>
+                            <div>
+                              <span style={{ fontSize: "0.72rem", color: "var(--muted, #a99bb8)", textTransform: "uppercase" }}>Удалено сообщений</span>
+                              <div style={{ fontSize: "1rem", fontWeight: 700, color: "#fff" }}>{selectedStream.num_deleted}</div>
+                              <div style={{ fontSize: "0.72rem", color: "var(--muted, #a99bb8)" }}>{selectedStream.max_age > 0 ? `Max age: ${formatAgeNs(selectedStream.max_age)}` : "Без ограничения по времени"}</div>
+                            </div>
+                          </div>
                         </div>
-                      </FormSection>
-                      <FormSection title="Доставка" hint="Откуда читать и в каком темпе отдавать">
-                        <div className="filters-row">
-                          <Select
-                            label="Deliver"
-                            hint={CONSUMER_HINTS.deliver}
-                            value={consumerForm.deliverPolicy}
-                            options={DELIVER_OPTIONS}
-                            onChange={(v) =>
-                              setConsumerForm({ ...consumerForm, deliverPolicy: v })
-                            }
-                          />
-                          <Select
-                            label="Replay"
-                            hint={CONSUMER_HINTS.replay}
-                            value={consumerForm.replayPolicy}
-                            options={REPLAY_OPTIONS}
-                            onChange={(v) =>
-                              setConsumerForm({ ...consumerForm, replayPolicy: v })
-                            }
-                          />
-                          <Field label="Opt start seq" hint={CONSUMER_HINTS.optStartSeq}>
-                            <input
-                              value={consumerForm.optStartSeq}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  optStartSeq: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Opt start time" hint={CONSUMER_HINTS.optStartTime}>
-                            <input
-                              value={consumerForm.optStartTime}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  optStartTime: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
+
+                        {/* Flags Card */}
+                        <div className="nats-card">
+                          <div className="nats-card-head">
+                            <h4>🚩 Флаги и возможности</h4>
+                          </div>
+                          <div className="nats-card-body">
+                            <div className="nats-flags-grid">
+                              {[
+                                { on: selectedStream.allow_direct, label: "allow_direct (прямое чтение)", hint: STREAM_HINTS.allowDirect },
+                                { on: selectedStream.no_ack, label: "no_ack (без подтверждения)", hint: STREAM_HINTS.noAck },
+                                { on: selectedStream.sealed, label: "sealed (только чтение)", hint: STREAM_HINTS.sealed },
+                                { on: selectedStream.deny_delete, label: "deny_delete (запрет удаления)", hint: STREAM_HINTS.denyDelete },
+                                { on: selectedStream.deny_purge, label: "deny_purge (запрет очистки)", hint: STREAM_HINTS.denyPurge },
+                                { on: selectedStream.allow_rollup, label: "allow_rollup", hint: STREAM_HINTS.allowRollup },
+                                { on: selectedStream.allow_msg_ttl, label: "allow_msg_ttl", hint: STREAM_HINTS.allowMsgTtl },
+                                { on: selectedStream.discard_new_per_subject, label: "discard_new_per_subject", hint: STREAM_HINTS.discardNewPerSubject },
+                              ].map((f) => (
+                                <div key={f.label} className={`nats-flag-chip ${f.on ? "is-on" : ""}`} title={f.hint}>
+                                  {f.on ? "✓" : "—"} {f.label}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         </div>
-                      </FormSection>
-                      <FormSection title="Push" hint="Если пусто — pull consumer. Иначе NATS сам публикует в deliver subject">
-                        <div className="filters-row">
-                          <Field label="Deliver subject" hint={CONSUMER_HINTS.deliverSubject}>
-                            <input
-                              value={consumerForm.deliverSubject}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  deliverSubject: e.target.value,
-                                })
-                              }
+                      </div>
+                    )}
+
+                    {/* Sub-tab 2: Config / Edit */}
+                    {streamDetailTab === "config" && (
+                      <form className="nats-config-view" onSubmit={onSaveStream}>
+                        <div className="nats-form-section">
+                          <span className="nats-form-section-title">Основные параметры</span>
+                          <div className="nats-form-grid">
+                            <div className="nats-field">
+                              <label>Имя стрима *</label>
+                              <input
+                                type="text"
+                                value={streamForm.name}
+                                disabled
+                                style={{ opacity: 0.6 }}
+                              />
+                            </div>
+                            <div className="nats-field">
+                              <label>Описание</label>
+                              <input
+                                type="text"
+                                value={streamForm.description}
+                                onChange={(e) => setStreamForm({ ...streamForm, description: e.target.value })}
+                              />
+                            </div>
+                          </div>
+                          <div className="nats-field">
+                            <label>Шаблоны Subjects (через запятую или новую строку) *</label>
+                            <textarea
+                              rows={2}
+                              value={streamForm.subjects}
+                              onChange={(e) => setStreamForm({ ...streamForm, subjects: e.target.value })}
                             />
-                          </Field>
-                          <Field label="Deliver group" hint={CONSUMER_HINTS.deliverGroup}>
-                            <input
-                              value={consumerForm.deliverGroup}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  deliverGroup: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
+                          </div>
                         </div>
-                      </FormSection>
-                      <FormSection title="Подтверждения" hint="Как consumer подтверждает сообщения и сколько можно держать без ack">
-                        <div className="filters-row">
-                          <Select
-                            label="Ack"
-                            hint={CONSUMER_HINTS.ack}
-                            value={consumerForm.ackPolicy}
-                            options={ACK_OPTIONS}
-                            onChange={(v) =>
-                              setConsumerForm({ ...consumerForm, ackPolicy: v })
-                            }
-                          />
-                          <Field label="Ack wait, сек" hint={CONSUMER_HINTS.ackWait}>
-                            <input
-                              value={consumerForm.ackWaitSec}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  ackWaitSec: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Max deliver" hint={CONSUMER_HINTS.maxDeliver}>
-                            <input
-                              value={consumerForm.maxDeliver}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  maxDeliver: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Max ack pending" hint={CONSUMER_HINTS.maxAckPending}>
-                            <input
-                              value={consumerForm.maxAckPending}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  maxAckPending: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Backoff, сек" hint={CONSUMER_HINTS.backoff}>
-                            <input
-                              value={consumerForm.backoffSec}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  backoffSec: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                        </div>
-                      </FormSection>
-                      <FormSection title="Лимиты pull" hint="Ограничения на pull-запросы и скорость выдачи">
-                        <div className="filters-row">
-                          <Field label="Max waiting" hint={CONSUMER_HINTS.maxWaiting}>
-                            <input
-                              value={consumerForm.maxWaiting}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  maxWaiting: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Max request batch" hint={CONSUMER_HINTS.maxRequestBatch}>
-                            <input
-                              value={consumerForm.maxRequestBatch}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  maxRequestBatch: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Max request expires, сек" hint={CONSUMER_HINTS.maxRequestExpires}>
-                            <input
-                              value={consumerForm.maxRequestExpiresSec}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  maxRequestExpiresSec: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Max request bytes" hint={CONSUMER_HINTS.maxRequestMaxBytes}>
-                            <input
-                              value={consumerForm.maxRequestMaxBytes}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  maxRequestMaxBytes: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Rate limit, B/s" hint={CONSUMER_HINTS.rateLimit}>
-                            <input
-                              value={consumerForm.rateLimitBps}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  rateLimitBps: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Sample freq" hint={CONSUMER_HINTS.sampleFreq}>
-                            <input
-                              value={consumerForm.sampleFreq}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  sampleFreq: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                        </div>
-                      </FormSection>
-                      <FormSection title="Надёжность" hint="Хранение состояния, heartbeat и ограничения на простой">
-                        <div className="filters-row">
-                          <Field label="Idle heartbeat, сек" hint={CONSUMER_HINTS.idleHeartbeat}>
-                            <input
-                              value={consumerForm.idleHeartbeatSec}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  idleHeartbeatSec: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Inactive threshold, сек" hint={CONSUMER_HINTS.inactiveThreshold}>
-                            <input
-                              value={consumerForm.inactiveThresholdSec}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  inactiveThresholdSec: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Replicas" hint={CONSUMER_HINTS.replicas}>
-                            <input
-                              value={consumerForm.replicas}
-                              onChange={(e) =>
-                                setConsumerForm({
-                                  ...consumerForm,
-                                  replicas: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                        </div>
-                        <div className="nats-flag-grid">
-                          <Check
-                            label="Memory storage"
-                            hint={CONSUMER_HINTS.memoryStorage}
-                            checked={consumerForm.memoryStorage}
-                            onChange={(v) =>
-                              setConsumerForm({ ...consumerForm, memoryStorage: v })
-                            }
-                          />
-                          <Check
-                            label="Headers only"
-                            hint={CONSUMER_HINTS.headersOnly}
-                            checked={consumerForm.headersOnly}
-                            onChange={(v) =>
-                              setConsumerForm({ ...consumerForm, headersOnly: v })
-                            }
-                          />
-                          <Check
-                            label="Flow control"
-                            hint={CONSUMER_HINTS.flowControl}
-                            checked={consumerForm.flowControl}
-                            onChange={(v) =>
-                              setConsumerForm({ ...consumerForm, flowControl: v })
-                            }
-                          />
-                        </div>
-                      </FormSection>
-                      <FormSection title="Metadata" hint={CONSUMER_HINTS.metadata}>
-                        <Field label="key=value, по строке" hint={CONSUMER_HINTS.metadata}>
-                          <textarea
-                            value={consumerForm.metadata}
-                            onChange={(e) =>
-                              setConsumerForm({ ...consumerForm, metadata: e.target.value })
-                            }
-                          />
-                        </Field>
-                      </FormSection>
-                    </form>
-                ) : (
-                  <div className="table-scroll table-scroll-fill">
-                    <table className="data-table nats-data-table">
-                      <thead>
-                        <tr>
-                          <th>Имя</th>
-                          <th>Filter</th>
-                          <th>Ack</th>
-                          <th>Pending</th>
-                          <th>Ack pend.</th>
-                          <th>Redeliv.</th>
-                          <th className="col-actions">Действия</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {consumers.length === 0 ? (
-                          <tr>
-                            <td colSpan={7} className="nats-empty">
-                              Нет consumers
-                            </td>
-                          </tr>
-                        ) : (
-                          consumers.map((c) => {
-                            const name = c.name || c.durable;
-                            return (
-                              <tr
-                                key={name}
-                                onClick={() => {
-                                  setCreatingConsumer(false);
-                                  setSelectedConsumer(name);
-                                }}
+
+                        <div className="nats-form-section">
+                          <span className="nats-form-section-title">Политики хранения и лимиты</span>
+                          <div className="nats-form-grid">
+                            <div className="nats-field">
+                              <label>Политика хранения (Retention)</label>
+                              <select
+                                value={streamForm.retention}
+                                onChange={(e) => setStreamForm({ ...streamForm, retention: Number(e.target.value) })}
                               >
-                                <td className="nats-cell-name" title={name}>
-                                  {name}
-                                </td>
-                                <td className="nats-cell mono" title={c.filter_subject || undefined}>
-                                  {c.filter_subject || "—"}
-                                </td>
-                                <td className="nats-cell">{enumLabel(ACK_OPTIONS, c.ack_policy)}</td>
-                                <td className="nats-num mono">{c.num_pending}</td>
-                                <td className="nats-num mono">{c.num_ack_pending}</td>
-                                <td className="nats-num mono">{c.num_redelivered}</td>
-                                <td className="col-actions">
-                                  <button
-                                    type="button"
-                                    className="nats-row-btn is-danger"
-                                    disabled={busy}
-                                    onClick={(ev) => {
-                                      ev.stopPropagation();
-                                      if (!confirm(`Удалить consumer ${name}?`)) return;
-                                      void run(async () => {
-                                        await deleteConsumer(selected.name, name);
-                                        setSelectedConsumer("");
-                                        setCreatingConsumer(false);
-                                        setConsumers(await fetchConsumers(selected.name));
-                                        await loadOverview();
-                                      }, `Consumer ${name} удалён`);
-                                    }}
-                                  >
-                                    Удалить
-                                  </button>
-                                </td>
+                                {RETENTION_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="nats-field">
+                              <label>Тип хранилища (Storage)</label>
+                              <select
+                                value={streamForm.storage}
+                                onChange={(e) => setStreamForm({ ...streamForm, storage: Number(e.target.value) })}
+                              >
+                                {STORAGE_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="nats-field">
+                              <label>Политика переполнения (Discard)</label>
+                              <select
+                                value={streamForm.discard}
+                                onChange={(e) => setStreamForm({ ...streamForm, discard: Number(e.target.value) })}
+                              >
+                                {DISCARD_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="nats-field">
+                              <label>Сжатие (Compression)</label>
+                              <select
+                                value={streamForm.compression}
+                                onChange={(e) => setStreamForm({ ...streamForm, compression: Number(e.target.value) })}
+                              >
+                                {COMPRESSION_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="nats-field">
+                              <label>Макс. сообщений (Max msgs)</label>
+                              <input
+                                type="text"
+                                placeholder="0 = без лимита"
+                                value={streamForm.maxMsgs}
+                                onChange={(e) => setStreamForm({ ...streamForm, maxMsgs: e.target.value })}
+                              />
+                            </div>
+                            <div className="nats-field">
+                              <label>Макс. размер, байт (Max bytes)</label>
+                              <input
+                                type="text"
+                                placeholder="0 = без лимита"
+                                value={streamForm.maxBytes}
+                                onChange={(e) => setStreamForm({ ...streamForm, maxBytes: e.target.value })}
+                              />
+                            </div>
+                            <div className="nats-field">
+                              <label>Макс. возраст, сек (Max age)</label>
+                              <input
+                                type="text"
+                                placeholder="0 = без ограничения"
+                                value={streamForm.maxAgeSec}
+                                onChange={(e) => setStreamForm({ ...streamForm, maxAgeSec: e.target.value })}
+                              />
+                            </div>
+                            <div className="nats-field">
+                              <label>Макс. consumers</label>
+                              <input
+                                type="text"
+                                value={streamForm.maxConsumers}
+                                onChange={(e) => setStreamForm({ ...streamForm, maxConsumers: e.target.value })}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="nats-form-section">
+                          <span className="nats-form-section-title">Флаги стрима</span>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", fontSize: "0.8rem" }}>
+                            <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", cursor: "pointer" }}>
+                              <input
+                                type="checkbox"
+                                checked={streamForm.allowDirect}
+                                onChange={(e) => setStreamForm({ ...streamForm, allowDirect: e.target.checked })}
+                              />
+                              Allow Direct
+                            </label>
+                            <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", cursor: "pointer" }}>
+                              <input
+                                type="checkbox"
+                                checked={streamForm.noAck}
+                                onChange={(e) => setStreamForm({ ...streamForm, noAck: e.target.checked })}
+                              />
+                              No Ack
+                            </label>
+                            <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", cursor: "pointer" }}>
+                              <input
+                                type="checkbox"
+                                checked={streamForm.discardNewPerSubject}
+                                onChange={(e) => setStreamForm({ ...streamForm, discardNewPerSubject: e.target.checked })}
+                              />
+                              Discard New Per Subject
+                            </label>
+                            <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", cursor: "pointer" }}>
+                              <input
+                                type="checkbox"
+                                checked={streamForm.allowRollup}
+                                onChange={(e) => setStreamForm({ ...streamForm, allowRollup: e.target.checked })}
+                              />
+                              Allow Rollup
+                            </label>
+                            <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", cursor: "pointer" }}>
+                              <input
+                                type="checkbox"
+                                checked={streamForm.allowMsgTtl}
+                                onChange={(e) => setStreamForm({ ...streamForm, allowMsgTtl: e.target.checked })}
+                              />
+                              Allow Msg TTL
+                            </label>
+                            <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", cursor: "pointer" }}>
+                              <input
+                                type="checkbox"
+                                checked={streamForm.denyDelete}
+                                onChange={(e) => setStreamForm({ ...streamForm, denyDelete: e.target.checked })}
+                              />
+                              Deny Delete
+                            </label>
+                            <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", cursor: "pointer" }}>
+                              <input
+                                type="checkbox"
+                                checked={streamForm.denyPurge}
+                                onChange={(e) => setStreamForm({ ...streamForm, denyPurge: e.target.checked })}
+                              />
+                              Deny Purge
+                            </label>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+                          <button type="submit" className="primary-btn" disabled={busy}>
+                            💾 Сохранить изменения
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* Sub-tab 3: Consumers */}
+                    {streamDetailTab === "consumers" && (
+                      <div className="nats-consumers-view">
+                        <div className="nats-toolbar">
+                          <span style={{ fontSize: "0.8rem", color: "var(--muted, #a99bb8)" }}>
+                            Подписанные Consumers на стрим {selectedStream.name}
+                          </span>
+                          <div className="nats-toolbar-group">
+                            <button
+                              type="button"
+                              className="secondary-btn sm"
+                              onClick={() => onExportConsumersRow(selectedStream)}
+                              title="Выгрузить всех consumers в JSON"
+                            >
+                              📥 Экспорт Consumers
+                            </button>
+                            <button
+                              type="button"
+                              className="primary-btn sm"
+                              onClick={() => {
+                                setConsumerForm(emptyConsumerForm());
+                                setDialog({ kind: "create-consumer" });
+                              }}
+                            >
+                              + Новый Consumer
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="nats-table-wrap">
+                          <table className="nats-table">
+                            <thead>
+                              <tr>
+                                <th>Имя / Durable</th>
+                                <th>Filter Subject</th>
+                                <th>Ack Policy</th>
+                                <th>Pending</th>
+                                <th>Ack Pend.</th>
+                                <th>Redelivered</th>
+                                <th>Created</th>
+                                <th style={{ textAlign: "right" }}>Действия</th>
                               </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            ) : null}
-
-            {tab === "messages" ? (
-              <div className="nats-pane nats-msg-page">
-                {!selected ? (
-                  <p className="hint">Выберите стрим.</p>
-                ) : (
-                  <>
-                    <div className="nats-msg-toolbar">
-                      <input
-                        value={msgSubject}
-                        onChange={(e) => setMsgSubject(e.target.value)}
-                        placeholder="Subject"
-                        title="Фильтр по subject на текущей странице"
-                      />
-                      <input
-                        value={msgPayload}
-                        onChange={(e) => setMsgPayload(e.target.value)}
-                        placeholder="Payload"
-                        title="Фильтр по тексту сообщения на текущей странице"
-                      />
-                      <input
-                        className="nats-msg-seq"
-                        value={msgSeqFrom}
-                        onChange={(e) => {
-                          setMsgSeqFrom(e.target.value);
-                          setMsgPage(1);
-                        }}
-                        placeholder={String(selected.first_seq || "seq с")}
-                        title="Начало диапазона seq"
-                      />
-                      <span className="nats-msg-sep">–</span>
-                      <input
-                        className="nats-msg-seq"
-                        value={msgSeqTo}
-                        onChange={(e) => {
-                          setMsgSeqTo(e.target.value);
-                          setMsgPage(1);
-                        }}
-                        placeholder={String(selected.last_seq || "seq по")}
-                        title="Конец диапазона seq"
-                      />
-                      <select
-                        value={msgPageSize}
-                        title="Сообщений на странице"
-                        onChange={(e) => {
-                          setMsgPageSize(Number(e.target.value));
-                          setMsgPage(1);
-                        }}
-                      >
-                        {[10, 25, 50, 100].map((n) => (
-                          <option key={n} value={n}>
-                            {n}/стр
-                          </option>
-                        ))}
-                      </select>
-                      <label className="nats-check">
-                        <input
-                          type="checkbox"
-                          checked={msgHideMissing}
-                          onChange={(e) => setMsgHideMissing(e.target.checked)}
-                        />
-                        Без удалённых
-                      </label>
-                      <span className="nats-msg-status">
-                        {msgLoading
-                          ? "Загрузка…"
-                          : msgWindow.span > 0
-                            ? `${msgWindow.start}–${msgWindow.end} · ${Math.min(msgPage, msgWindow.pages)}/${msgWindow.pages}`
-                            : "пусто"}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={msgLoading || msgPage <= 1}
-                        onClick={() => setMsgPage((p) => Math.max(1, p - 1))}
-                      >
-                        ←
-                      </button>
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={msgLoading || msgPage >= msgWindow.pages}
-                        onClick={() => setMsgPage((p) => p + 1)}
-                      >
-                        →
-                      </button>
-                    </div>
-                    <div className="table-scroll table-scroll-fill nats-msg-table">
-                      <table className="data-table nats-data-table nats-msg-data">
-                        <thead>
-                          <tr>
-                            <th>Seq</th>
-                            <th>Subject</th>
-                            <th>Время</th>
-                            <th>Размер</th>
-                            <th>Данные</th>
-                            <th className="col-actions">Действия</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {visibleMsgRows.length === 0 ? (
-                            <tr>
-                              <td colSpan={6} className="nats-empty">
-                                {msgLoading ? "Загрузка…" : "Нет сообщений на этой странице"}
-                              </td>
-                            </tr>
-                          ) : (
-                            visibleMsgRows.map((row) => {
-                              const open = msgOpenSeq === row.seq;
-                              return (
-                                <tr
-                                  key={row.seq}
-                                  className={open ? "is-selected" : ""}
-                                  onClick={() =>
-                                    setMsgOpenSeq(open ? null : row.seq)
-                                  }
-                                >
-                                  <td className="mono nats-num">{row.seq}</td>
-                                  <td
-                                    className="nats-cell mono"
-                                    title={row.msg?.subject || undefined}
-                                  >
-                                    {row.msg?.subject || "—"}
-                                  </td>
-                                  <td className="nats-num mono table-datetime">
-                                    {row.msg ? formatDateTime(row.msg.time) : "удалено"}
-                                  </td>
-                                  <td className="nats-num mono">
-                                    {row.msg
-                                      ? formatBytes(new TextEncoder().encode(row.msg.data).length)
-                                      : "—"}
-                                  </td>
-                                  <td
-                                    className="nats-msg-preview"
-                                    title={row.msg ? previewText(row.msg.data) : undefined}
-                                  >
-                                    {row.msg
-                                      ? previewText(row.msg.data)
-                                      : "seq отсутствует"}
-                                  </td>
-                                  <td className="col-actions">
-                                    {row.msg && !selected.deny_delete ? (
-                                      <button
-                                        type="button"
-                                        className="nats-row-btn is-danger"
-                                        disabled={busy}
-                                        onClick={(ev) => {
-                                          ev.stopPropagation();
-                                          if (!confirm(`Удалить seq=${row.seq}?`)) return;
-                                          void run(async () => {
-                                            await deleteMessage(selected.name, row.seq);
-                                            setMsgRows((prev) =>
-                                              prev.map((item) =>
-                                                item.seq === row.seq
-                                                  ? { seq: row.seq, msg: null }
-                                                  : item,
-                                              ),
-                                            );
-                                            if (msgOpenSeq === row.seq) setMsgOpenSeq(null);
-                                            await loadOverview();
-                                          }, `Сообщение ${row.seq} удалено`);
-                                        }}
-                                      >
-                                        Удалить
-                                      </button>
-                                    ) : null}
-                                  </td>
+                            </thead>
+                            <tbody>
+                              {consumersLoading ? (
+                                <tr>
+                                  <td colSpan={8} style={{ textAlign: "center", padding: "1.5rem" }}>Загрузка consumers...</td>
                                 </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                    {openMessage ? (
-                      <pre className="nats-msg">
-                        {`seq ${openMessage.seq}  ${openMessage.subject}
-${formatDateTime(openMessage.time)}${openMessage.data_base64 ? "  (base64)" : ""}
+                              ) : consumers.length === 0 ? (
+                                <tr>
+                                  <td colSpan={8} style={{ textAlign: "center", padding: "1.5rem" }}>Consumers не найдены</td>
+                                </tr>
+                              ) : (
+                                consumers.map((c) => {
+                                  const name = c.durable || c.name;
+                                  return (
+                                    <tr key={name}>
+                                      <td>
+                                        <strong style={{ color: "#fff" }}>{name}</strong>
+                                        {c.description && <div style={{ fontSize: "0.7rem", color: "var(--muted, #a99bb8)" }}>{c.description}</div>}
+                                      </td>
+                                      <td className="mono">{c.filter_subject || (c.filter_subjects?.length ? c.filter_subjects.join(", ") : "*")}</td>
+                                      <td>
+                                        <span className="nats-tag">{enumLabel(ACK_OPTIONS, c.ack_policy)}</span>
+                                      </td>
+                                      <td className="mono">{c.num_pending}</td>
+                                      <td className="mono">{c.num_ack_pending}</td>
+                                      <td className="mono">{c.num_redelivered}</td>
+                                      <td style={{ fontSize: "0.72rem" }}>{formatDateTime(c.created)}</td>
+                                      <td style={{ textAlign: "right" }}>
+                                        <div style={{ display: "inline-flex", gap: "0.3rem" }}>
+                                          <button
+                                            type="button"
+                                            className="secondary-btn sm"
+                                            onClick={() => {
+                                              setConsumerForm(consumerFormFrom(c));
+                                              setDialog({ kind: "edit-consumer", consumer: c });
+                                            }}
+                                          >
+                                            Изменить
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="danger-btn sm"
+                                            onClick={() => {
+                                              setDialog({
+                                                kind: "confirm-danger",
+                                                title: `Удаление consumer ${name}`,
+                                                prompt: `Удалить consumer "${name}" из стрима "${selectedStream.name}"?`,
+                                                actionName: "Удалить consumer",
+                                                onConfirm: async () => {
+                                                  await deleteConsumer(selectedStream.name, name);
+                                                  await loadConsumersForStream(selectedStream.name);
+                                                  await loadOverview();
+                                                },
+                                              });
+                                            }}
+                                          >
+                                            🗑
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
 
-${openMessage.data || "—"}`}
-                      </pre>
-                    ) : null}
-                    <form className="nats-msg-publish" onSubmit={onPublish}>
-                      <details>
-                        <summary>Опубликовать</summary>
-                        <div className="nats-msg-publish-row">
-                          <input
-                            value={publishForm.subject}
-                            onChange={(e) =>
-                              setPublishForm({ ...publishForm, subject: e.target.value })
-                            }
-                            placeholder={selected.subjects[0] || "subject"}
-                            title="Subject"
-                          />
-                          <input
-                            value={publishForm.data}
-                            onChange={(e) =>
-                              setPublishForm({ ...publishForm, data: e.target.value })
-                            }
-                            placeholder="payload"
-                            title="Тело сообщения"
-                          />
-                          <button type="submit" className="btn primary" disabled={busy}>
-                            Отправить
+                    {/* Sub-tab 4: Messages */}
+                    {streamDetailTab === "messages" && (
+                      <div className="nats-messages-view">
+                        <div className="nats-toolbar">
+                          <div className="nats-toolbar-group">
+                            <input
+                              type="text"
+                              placeholder="Фильтр по subject"
+                              value={msgSubject}
+                              onChange={(e) => setMsgSubject(e.target.value)}
+                              style={{ width: "130px" }}
+                            />
+                            <input
+                              type="text"
+                              placeholder="Поиск в payload"
+                              value={msgPayload}
+                              onChange={(e) => setMsgPayload(e.target.value)}
+                              style={{ width: "130px" }}
+                            />
+                            <input
+                              type="text"
+                              placeholder={`seq с (${selectedStream.first_seq})`}
+                              value={msgSeqFrom}
+                              onChange={(e) => {
+                                setMsgSeqFrom(e.target.value);
+                                setMsgPage(1);
+                              }}
+                              style={{ width: "85px" }}
+                            />
+                            <span>–</span>
+                            <input
+                              type="text"
+                              placeholder={`seq по (${selectedStream.last_seq})`}
+                              value={msgSeqTo}
+                              onChange={(e) => {
+                                setMsgSeqTo(e.target.value);
+                                setMsgPage(1);
+                              }}
+                              style={{ width: "85px" }}
+                            />
+                            <select
+                              value={msgPageSize}
+                              onChange={(e) => {
+                                setMsgPageSize(Number(e.target.value));
+                                setMsgPage(1);
+                              }}
+                            >
+                              {[10, 25, 50, 100].map((n) => (
+                                <option key={n} value={n}>{n}/стр</option>
+                              ))}
+                            </select>
+                            <label style={{ display: "flex", alignItems: "center", gap: "0.25rem", fontSize: "0.72rem", cursor: "pointer" }}>
+                              <input
+                                type="checkbox"
+                                checked={msgHideMissing}
+                                onChange={(e) => setMsgHideMissing(e.target.checked)}
+                              />
+                              Без удалённых
+                            </label>
+                          </div>
+
+                          <div className="nats-toolbar-group">
+                            <span style={{ fontSize: "0.75rem", color: "var(--muted, #a99bb8)" }}>
+                              {msgLoading
+                                ? "Загрузка…"
+                                : msgWindow.span > 0
+                                  ? `Диапазон ${msgWindow.start}–${msgWindow.end} (Стр. ${Math.min(msgPage, msgWindow.pages)}/${msgWindow.pages})`
+                                  : "Нет данных"}
+                            </span>
+                            <button
+                              type="button"
+                              className="secondary-btn sm"
+                              disabled={msgLoading || msgPage <= 1}
+                              onClick={() => setMsgPage((p) => Math.max(1, p - 1))}
+                            >
+                              ← Назад
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-btn sm"
+                              disabled={msgLoading || msgPage >= msgWindow.pages}
+                              onClick={() => setMsgPage((p) => p + 1)}
+                            >
+                              Вперёд →
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="nats-table-wrap">
+                          <table className="nats-table">
+                            <thead>
+                              <tr>
+                                <th style={{ width: "70px" }}>Seq</th>
+                                <th>Subject</th>
+                                <th>Время</th>
+                                <th>Размер</th>
+                                <th>Данные (Payload)</th>
+                                <th style={{ textAlign: "right" }}>Действия</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {msgLoading ? (
+                                <tr>
+                                  <td colSpan={6} style={{ textAlign: "center", padding: "1.5rem" }}>Загрузка сообщений...</td>
+                                </tr>
+                              ) : visibleMsgRows.length === 0 ? (
+                                <tr>
+                                  <td colSpan={6} style={{ textAlign: "center", padding: "1.5rem" }}>Сообщения не найдены</td>
+                                </tr>
+                              ) : (
+                                visibleMsgRows.map((row) => (
+                                  <tr
+                                    key={row.seq}
+                                    style={{ cursor: row.msg ? "pointer" : "default" }}
+                                    onClick={() => row.msg && setDialog({ kind: "view-message", msg: row.msg })}
+                                  >
+                                    <td className="mono" style={{ fontWeight: 600 }}>{row.seq}</td>
+                                    <td className="mono">{row.msg?.subject || "—"}</td>
+                                    <td style={{ fontSize: "0.72rem" }}>
+                                      {row.msg ? formatDateTime(row.msg.time) : "удалено"}
+                                    </td>
+                                    <td className="mono">
+                                      {row.msg ? formatBytes(new TextEncoder().encode(row.msg.data).length) : "—"}
+                                    </td>
+                                    <td className="mono" style={{ maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                      {row.msg ? previewText(row.msg.data) : "seq отсутствует"}
+                                    </td>
+                                    <td style={{ textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
+                                      {row.msg && !selectedStream.deny_delete ? (
+                                        <button
+                                          type="button"
+                                          className="danger-btn sm"
+                                          disabled={busy}
+                                          onClick={() => {
+                                            setDialog({
+                                              kind: "confirm-danger",
+                                              title: `Удаление сообщения seq=${row.seq}`,
+                                              prompt: `Удалить сообщение seq=${row.seq} из стрима "${selectedStream.name}"?`,
+                                              actionName: "Удалить сообщение",
+                                              onConfirm: async () => {
+                                                await deleteMessage(selectedStream.name, row.seq);
+                                                setMsgRows((prev) =>
+                                                  prev.map((item) =>
+                                                    item.seq === row.seq ? { seq: row.seq, msg: null } : item,
+                                                  ),
+                                                );
+                                                await loadOverview();
+                                              },
+                                            });
+                                          }}
+                                        >
+                                          🗑
+                                        </button>
+                                      ) : null}
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Sub-tab 5: JSON */}
+                    {streamDetailTab === "json" && (
+                      <div className="nats-json-view">
+                        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                          <button
+                            type="button"
+                            className="secondary-btn sm"
+                            onClick={() => copyText("json", JSON.stringify(selectedStream, null, 2))}
+                          >
+                            {copiedKey === "json" ? "✓ Скопировано!" : "📋 Скопировать JSON"}
                           </button>
                         </div>
-                      </details>
-                    </form>
-                  </>
-                )}
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : (
-        <div className="nats-list">
-          <form className="nats-filters" onSubmit={onLookup}>
-            <label className="filter-field">
-              <span>Фильтр</span>
-              <input
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder="имя, subject"
-              />
-            </label>
-            <label className="filter-field">
-              <span>Subject → стрим</span>
-              <input
-                value={subjectQuery}
-                onChange={(e) => setSubjectQuery(e.target.value)}
-                placeholder="TrB.HistoricCandle.Task.>"
-              />
-            </label>
-            <button type="submit" className="btn" disabled={busy}>
-              Найти
-            </button>
-          </form>
-          <div className="table-scroll table-scroll-fill">
-            <table className="data-table nats-data-table">
-              <thead>
-                <tr>
-                  <th>Имя</th>
-                  <th>Msgs</th>
-                  <th>Размер</th>
-                  <th>Consumers</th>
-                  <th>Storage</th>
-                  <th className="col-actions">Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredStreams.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="nats-empty">
-                      {loading ? "Загрузка…" : "Стримов нет"}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredStreams.map((stream) => (
-                    <tr key={stream.name} onClick={() => openStream(stream.name)}>
-                      <td className="nats-cell-name" title={stream.name}>
-                        {stream.name}
-                      </td>
-                      <td className="nats-num mono">{stream.msgs.toLocaleString()}</td>
-                      <td className="nats-num mono">{formatBytes(stream.bytes)}</td>
-                      <td className="nats-num mono">{stream.consumer_count}</td>
-                      <td className="nats-cell">{enumLabel(STORAGE_OPTIONS, stream.storage)}</td>
-                      <td className="col-actions">
-                        <div className="col-act-group">
-                          <button
-                            type="button"
-                            className="nats-row-btn"
-                            disabled={busy}
-                            title="Скачать JSON-конфиг этого стрима"
-                            onClick={(ev) => {
-                              ev.stopPropagation();
-                              onExportStreamRow(stream);
-                            }}
-                          >
-                            Стрим
-                          </button>
-                          <button
-                            type="button"
-                            className="nats-row-btn"
-                            disabled={busy}
-                            title="Скачать JSON consumers этого стрима"
-                            onClick={(ev) => {
-                              ev.stopPropagation();
-                              onExportConsumersRow(stream);
-                            }}
-                          >
-                            Cons.
-                          </button>
-                          <button
-                            type="button"
-                            className="nats-row-btn is-danger"
-                            disabled={busy || stream.deny_delete}
-                            title={
-                              stream.deny_delete
-                                ? STREAM_HINTS.denyDelete
-                                : "Удалить стрим вместе с сообщениями и consumers"
-                            }
-                            onClick={(ev) => {
-                              ev.stopPropagation();
-                              onDeleteStreamRow(stream);
-                            }}
-                          >
-                            Удалить
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function HintLabel({ hint, children }: { hint: string; children: ReactNode }) {
-  return (
-    <span className="nats-tip" tabIndex={0}>
-      {children}
-      <span className="nats-tip-box">{hint}</span>
-    </span>
-  );
-}
-
-function StatCard({
-  label,
-  hint,
-  value,
-  sub,
-  used,
-  max,
-}: {
-  label: string;
-  hint: string;
-  value: ReactNode;
-  sub?: ReactNode;
-  used?: number;
-  max?: number;
-}) {
-  const pct =
-    max != null && used != null && max > 0
-      ? Math.max(0, Math.min(100, (used / max) * 100))
-      : null;
-  return (
-    <div className="nats-stat">
-      <div className="nats-stat-label">
-        <HintLabel hint={hint}>{label}</HintLabel>
-      </div>
-      <div className="nats-stat-value">{value}</div>
-      {sub ? <div className="nats-stat-sub">{sub}</div> : null}
-      {pct != null ? (
-        <div className="nats-meter">
-          <span style={{ width: `${pct}%` }} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function InfoRow({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="nats-row">
-      <span className="nats-row-k">
-        <HintLabel hint={hint}>{label}</HintLabel>
-      </span>
-      <span className="nats-row-v">{children}</span>
-    </div>
-  );
-}
-
-function StreamOverview({ stream }: { stream: NatsStream }) {
-  const flags = [
-    { on: stream.allow_direct, label: "direct", hint: STREAM_HINTS.allowDirect },
-    { on: stream.no_ack, label: "no-ack", hint: STREAM_HINTS.noAck },
-    { on: stream.sealed, label: "sealed", hint: STREAM_HINTS.sealed },
-    { on: stream.deny_delete, label: "deny-delete", hint: STREAM_HINTS.denyDelete },
-    { on: stream.deny_purge, label: "deny-purge", hint: STREAM_HINTS.denyPurge },
-    { on: stream.allow_rollup, label: "rollup", hint: STREAM_HINTS.allowRollup },
-    { on: stream.allow_msg_ttl, label: "msg-ttl", hint: STREAM_HINTS.allowMsgTtl },
-    {
-      on: stream.discard_new_per_subject,
-      label: "discard/subject",
-      hint: STREAM_HINTS.discardNewPerSubject,
-    },
-  ];
-  const meta = Object.entries(stream.metadata ?? {});
-
-  return (
-    <div className="nats-ov">
-      <div className="nats-ov-lead">
-        {stream.description ? (
-          <p className="nats-ov-desc">{stream.description}</p>
-        ) : (
-          <p className="nats-ov-desc is-empty">Без описания</p>
-        )}
-        <div className="nats-subjects">
-          {stream.subjects.length ? (
-            stream.subjects.map((subject) => (
-              <HintLabel key={subject} hint={STREAM_HINTS.subjects}>
-                <span className="nats-subject">{subject}</span>
-              </HintLabel>
-            ))
-          ) : (
-            <span className="nats-ov-desc is-empty">Нет subjects</span>
-          )}
-        </div>
-      </div>
-
-      <div className="nats-stat-grid">
-        <StatCard
-          label="Сообщения"
-          hint={STREAM_HINTS.msgs}
-          value={stream.msgs.toLocaleString("ru-RU")}
-          sub={limitText(stream.max_msgs, (n) => `лимит ${n.toLocaleString("ru-RU")}`)}
-          used={stream.msgs}
-          max={stream.max_msgs}
-        />
-        <StatCard
-          label="Размер"
-          hint={STREAM_HINTS.bytes}
-          value={formatBytes(stream.bytes)}
-          sub={limitText(stream.max_bytes, (n) => `лимит ${formatBytes(n)}`)}
-          used={stream.bytes}
-          max={stream.max_bytes}
-        />
-        <StatCard
-          label="Consumers"
-          hint={STREAM_HINTS.consumers}
-          value={stream.consumer_count.toLocaleString("ru-RU")}
-          sub={limitText(stream.max_consumers, (n) => `лимит ${n.toLocaleString("ru-RU")}`)}
-          used={stream.consumer_count}
-          max={stream.max_consumers}
-        />
-        <StatCard
-          label="Subjects"
-          hint={STREAM_HINTS.numSubjects}
-          value={stream.num_subjects.toLocaleString("ru-RU")}
-          sub={limitText(
-            stream.max_msgs_per_subject,
-            (n) => `макс. ${n.toLocaleString("ru-RU")} на subject`,
-          )}
-        />
-      </div>
-
-      <div className="nats-ov-grid">
-        <section className="nats-card">
-          <h3>Последовательность</h3>
-          <div className="nats-seq">
-            <div className="nats-seq-ends">
-              <div>
-                <HintLabel hint={STREAM_HINTS.firstSeq}>Первый seq</HintLabel>
-                <strong>{stream.first_seq.toLocaleString("ru-RU")}</strong>
-                <span>
-                  <HintLabel hint={STREAM_HINTS.firstTs}>
-                    {formatDateTime(stream.first_ts)}
-                  </HintLabel>
-                </span>
-              </div>
-              <div>
-                <HintLabel hint={STREAM_HINTS.lastSeq}>Последний seq</HintLabel>
-                <strong>{stream.last_seq.toLocaleString("ru-RU")}</strong>
-                <span>
-                  <HintLabel hint={STREAM_HINTS.lastTs}>
-                    {formatDateTime(stream.last_ts)}
-                  </HintLabel>
-                </span>
-              </div>
-            </div>
-            <div className="nats-seq-line" />
-            <div className="nats-seq-meta">
-              <HintLabel hint={STREAM_HINTS.numDeleted}>
-                удалено {stream.num_deleted.toLocaleString("ru-RU")}
-              </HintLabel>
-              {stream.max_age > 0 ? (
-                <>
-                  <span>·</span>
-                  <HintLabel hint={STREAM_HINTS.maxAge}>
-                    возраст {formatAgeNs(stream.max_age)}
-                  </HintLabel>
+                        <pre className="nats-code-box">
+                          {JSON.stringify(selectedStream, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
                 </>
-              ) : null}
+              ) : (
+                <div className="nats-empty">
+                  <span className="icon">👈</span>
+                  <span>Выберите стрим слева для просмотра деталей</span>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+
+        {/* ================= TAB 2: PUBLISH & LOOKUP ================= */}
+        {activeTab === "publish" && (
+          <div className="nats-console-layout">
+            {/* Left: Quick Publish */}
+            <section className="nats-pane" style={{ padding: "0.85rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div className="nats-pane-header" style={{ margin: "-0.85rem -0.85rem 0.5rem -0.85rem" }}>
+                <h3>📤 Опубликовать сообщение (Publish)</h3>
+              </div>
+              <form onSubmit={onPublish} style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
+                <div className="nats-field">
+                  <label>Subject *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="TrB.HistoricCandle.Task.AAPL.1min"
+                    value={publishForm.subject}
+                    onChange={(e) => setPublishForm({ ...publishForm, subject: e.target.value })}
+                  />
+                </div>
+                <div className="nats-field">
+                  <label>Данные / Payload (JSON или текст)</label>
+                  <textarea
+                    rows={8}
+                    placeholder='{"action": "sync", "figi": "BBG000B9XRY4"}'
+                    value={publishForm.data}
+                    onChange={(e) => setPublishForm({ ...publishForm, data: e.target.value })}
+                  />
+                </div>
+                <button type="submit" className="primary-btn" disabled={busy || !publishForm.subject.trim()}>
+                  🚀 Опубликовать в NATS
+                </button>
+              </form>
+            </section>
+
+            {/* Right: Subject Lookup & Info */}
+            <section className="nats-pane" style={{ padding: "0.85rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div className="nats-pane-header" style={{ margin: "-0.85rem -0.85rem 0.5rem -0.85rem" }}>
+                <h3>🔍 Поиск стрима по Subject (Lookup)</h3>
+              </div>
+              <form onSubmit={onLookup} style={{ display: "flex", gap: "0.45rem" }}>
+                <input
+                  type="text"
+                  placeholder="Введите subject, например TrB.HistoricCandle.Task.>"
+                  value={subjectQuery}
+                  onChange={(e) => setSubjectQuery(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button type="submit" className="secondary-btn" disabled={busy || !subjectQuery.trim()}>
+                  Найти стрим
+                </button>
+              </form>
+
+              <div className="nats-card" style={{ marginTop: "0.5rem" }}>
+                <div className="nats-card-head">
+                  <h4>💡 Справка по NATS JetStream шаблонам</h4>
+                </div>
+                <div className="nats-card-body" style={{ fontSize: "0.8rem", color: "var(--text, #efe8f8)", lineHeight: 1.5 }}>
+                  <p><strong><code>*</code> (один токен):</strong> Сопоставляется ровно с одним элементом пути. Например, <code>TrB.*.Task</code> подходит под <code>TrB.Candle.Task</code>, но не <code>TrB.Candle.Sub.Task</code>.</p>
+                  <p><strong><code>&gt;</code> (все токены):</strong> Сопоставляется с любым количеством уровней в конце пути. Например, <code>TrB.HistoricCandle.&gt;</code> подходит под всё, что начинается с этого префикса.</p>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {/* ================= TAB 3: SYSTEM & BACKUP ================= */}
+        {activeTab === "system" && (
+          <div className="nats-system-layout">
+            {/* Backup / Export */}
+            <div className="nats-pane" style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div className="nats-pane-header" style={{ margin: "-1rem -1rem 0.5rem -1rem" }}>
+                <h3>📦 Экспорт и Резервное копирование</h3>
+              </div>
+              <p style={{ fontSize: "0.82rem", color: "var(--muted, #a99bb8)", lineHeight: 1.4 }}>
+                Выгрузите полную конфигурацию всех JetStream стримов и consumers аккаунта в единый JSON-файл для резервного копирования или миграции.
+              </p>
+              <button
+                type="button"
+                className="primary-btn"
+                disabled={busy}
+                onClick={onExportJson}
+                style={{ alignSelf: "flex-start" }}
+              >
+                📥 Скачать полный nats-settings.json
+              </button>
+            </div>
+
+            {/* Import / Restore */}
+            <div className="nats-pane" style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div className="nats-pane-header" style={{ margin: "-1rem -1rem 0.5rem -1rem" }}>
+                <h3>📤 Импорт конфигурации (Apply JSON)</h3>
+              </div>
+              <p style={{ fontSize: "0.82rem", color: "var(--muted, #a99bb8)", lineHeight: 1.4 }}>
+                Загрузите JSON-файл с конфигурацией. Существующие стримы и consumers будут обновлены, отсутствующие — созданы. Сообщения не затрагиваются.
+              </p>
+              <button
+                type="button"
+                className="secondary-btn"
+                disabled={busy}
+                onClick={onImportJson}
+                style={{ alignSelf: "flex-start" }}
+              >
+                📂 Выбрать и применить JSON
+              </button>
             </div>
           </div>
-        </section>
+        )}
+      </main>
 
-        <section className="nats-card">
-          <h3>Политика</h3>
-          <div className="nats-rows">
-            <InfoRow label="Retention" hint={STREAM_HINTS.retention}>
-              <strong>{enumLabel(RETENTION_OPTIONS, stream.retention)}</strong>
-              <em>{retentionNote(stream.retention)}</em>
-            </InfoRow>
-            <InfoRow label="Storage" hint={STREAM_HINTS.storage}>
-              <strong>{enumLabel(STORAGE_OPTIONS, stream.storage)}</strong>
-              <em>
-                {stream.storage === 1
-                  ? "Только RAM, пропадёт при рестарте."
-                  : "На диске, переживает рестарт."}
-              </em>
-            </InfoRow>
-            <InfoRow label="Discard" hint={STREAM_HINTS.discard}>
-              <strong>{enumLabel(DISCARD_OPTIONS, stream.discard)}</strong>
-              <em>{discardNote(stream.discard)}</em>
-            </InfoRow>
-            <InfoRow label="Compression" hint={STREAM_HINTS.compression}>
-              {enumLabel(COMPRESSION_OPTIONS, stream.compression)}
-            </InfoRow>
-            <InfoRow label="Replicas" hint={STREAM_HINTS.replicas}>
-              {stream.replicas || 1}
-            </InfoRow>
-            <InfoRow label="Dedup window" hint={STREAM_HINTS.duplicateWindow}>
-              {stream.duplicate_window > 0
-                ? formatAgeNs(stream.duplicate_window)
-                : "по умолчанию"}
-            </InfoRow>
-          </div>
-        </section>
+      {/* ================= MODALS & DIALOGS ================= */}
 
-        <section className="nats-card">
-          <h3>Лимиты</h3>
-          <div className="nats-rows">
-            <InfoRow label="Max msgs" hint={STREAM_HINTS.maxMsgs}>
-              {limitText(stream.max_msgs)}
-            </InfoRow>
-            <InfoRow label="Max bytes" hint={STREAM_HINTS.maxBytes}>
-              {limitText(stream.max_bytes, formatBytes)}
-            </InfoRow>
-            <InfoRow label="Max age" hint={STREAM_HINTS.maxAge}>
-              {formatAgeNs(stream.max_age)}
-            </InfoRow>
-            <InfoRow label="Max consumers" hint={STREAM_HINTS.maxConsumers}>
-              {limitText(stream.max_consumers)}
-            </InfoRow>
-            <InfoRow label="Max msgs/subject" hint={STREAM_HINTS.maxMsgsPerSubject}>
-              {limitText(stream.max_msgs_per_subject)}
-            </InfoRow>
-            <InfoRow label="Max msg size" hint={STREAM_HINTS.maxMsgSize}>
-              {limitText(stream.max_msg_size, formatBytes)}
-            </InfoRow>
-          </div>
-        </section>
-      </div>
-
-      <section className="nats-card">
-        <h3>Флаги</h3>
-        <div className="nats-flags">
-          {flags.map((flag) => (
-            <HintLabel key={flag.label} hint={flag.hint}>
-              <span className={flag.on ? "nats-flag is-on" : "nats-flag"}>
-                {flag.label}
-              </span>
-            </HintLabel>
-          ))}
-        </div>
-      </section>
-
-      <section className="nats-card nats-card-foot">
-        <div className="nats-rows">
-          <InfoRow label="Кластер" hint={STREAM_HINTS.cluster}>
-            {stream.cluster_name || "—"}
-            {stream.cluster_leader ? ` · лидер ${stream.cluster_leader}` : ""}
-          </InfoRow>
-          <InfoRow label="Создан" hint={STREAM_HINTS.created}>
-            {formatDateTime(stream.created)}
-          </InfoRow>
-          {stream.first_seq_cfg ? (
-            <InfoRow label="First seq (cfg)" hint={STREAM_HINTS.firstSeqCfg}>
-              {stream.first_seq_cfg.toLocaleString("ru-RU")}
-            </InfoRow>
-          ) : null}
-          {meta.length ? (
-            <InfoRow label="Metadata" hint={STREAM_HINTS.metadata}>
-              <div className="nats-subjects">
-                {meta.map(([key, value]) => (
-                  <span key={key} className="nats-subject">
-                    {key}={value}
-                  </span>
-                ))}
+      {/* 1. Create Stream Modal */}
+      {dialog?.kind === "create-stream" && (
+        <ModalBackdrop onClose={() => setDialog(null)}>
+          <div className="nats-modal-window" onClick={(e) => e.stopPropagation()}>
+            <div className="nats-modal-head">
+              <h3>Создание нового стрима JetStream</h3>
+              <button type="button" className="nats-modal-close" onClick={() => setDialog(null)}>✕</button>
+            </div>
+            <form onSubmit={onSaveStream}>
+              <div className="nats-modal-body">
+                <div className="nats-field">
+                  <label>Имя стрима *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="MY_STREAM"
+                    value={streamForm.name}
+                    onChange={(e) => setStreamForm({ ...streamForm, name: e.target.value })}
+                    autoFocus
+                  />
+                </div>
+                <div className="nats-field">
+                  <label>Описание</label>
+                  <input
+                    type="text"
+                    placeholder="Назначение стрима..."
+                    value={streamForm.description}
+                    onChange={(e) => setStreamForm({ ...streamForm, description: e.target.value })}
+                  />
+                </div>
+                <div className="nats-field">
+                  <label>Subjects (через запятую или новую строку) *</label>
+                  <textarea
+                    rows={2}
+                    required
+                    placeholder="TrB.Event.*"
+                    value={streamForm.subjects}
+                    onChange={(e) => setStreamForm({ ...streamForm, subjects: e.target.value })}
+                  />
+                </div>
+                <div className="nats-form-grid">
+                  <div className="nats-field">
+                    <label>Политика хранения</label>
+                    <select
+                      value={streamForm.retention}
+                      onChange={(e) => setStreamForm({ ...streamForm, retention: Number(e.target.value) })}
+                    >
+                      {RETENTION_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="nats-field">
+                    <label>Хранилище</label>
+                    <select
+                      value={streamForm.storage}
+                      onChange={(e) => setStreamForm({ ...streamForm, storage: Number(e.target.value) })}
+                    >
+                      {STORAGE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
-            </InfoRow>
-          ) : null}
-        </div>
-      </section>
+              <div className="nats-modal-foot">
+                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>Отмена</button>
+                <button type="submit" className="primary-btn" disabled={busy || !streamForm.name.trim()}>Создать стрим</button>
+              </div>
+            </form>
+          </div>
+        </ModalBackdrop>
+      )}
+
+      {/* 2. Create / Edit Consumer Modal */}
+      {(dialog?.kind === "create-consumer" || dialog?.kind === "edit-consumer") && (
+        <ModalBackdrop onClose={() => setDialog(null)}>
+          <div className="nats-modal-window" onClick={(e) => e.stopPropagation()}>
+            <div className="nats-modal-head">
+              <h3>{dialog.kind === "edit-consumer" ? `Редактирование consumer ${dialog.consumer.durable || dialog.consumer.name}` : `Новый consumer в стриме ${selectedStreamName}`}</h3>
+              <button type="button" className="nats-modal-close" onClick={() => setDialog(null)}>✕</button>
+            </div>
+            <form onSubmit={onSaveConsumer}>
+              <div className="nats-modal-body">
+                <div className="nats-form-grid">
+                  <div className="nats-field">
+                    <label>Durable Name *</label>
+                    <input
+                      type="text"
+                      required
+                      disabled={dialog.kind === "edit-consumer"}
+                      placeholder="worker-group"
+                      value={consumerForm.durable}
+                      onChange={(e) => setConsumerForm({ ...consumerForm, durable: e.target.value })}
+                      autoFocus={dialog.kind === "create-consumer"}
+                    />
+                  </div>
+                  <div className="nats-field">
+                    <label>Описание</label>
+                    <input
+                      type="text"
+                      placeholder="Обработчик задач..."
+                      value={consumerForm.description}
+                      onChange={(e) => setConsumerForm({ ...consumerForm, description: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="nats-field">
+                  <label>Filter Subject</label>
+                  <input
+                    type="text"
+                    placeholder="TrB.Event.User.>"
+                    value={consumerForm.filterSubject}
+                    onChange={(e) => setConsumerForm({ ...consumerForm, filterSubject: e.target.value })}
+                  />
+                </div>
+
+                <div className="nats-form-grid">
+                  <div className="nats-field">
+                    <label>Политика доставки (Deliver)</label>
+                    <select
+                      value={consumerForm.deliverPolicy}
+                      onChange={(e) => setConsumerForm({ ...consumerForm, deliverPolicy: Number(e.target.value) })}
+                    >
+                      {DELIVER_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="nats-field">
+                    <label>Политика подтверждения (Ack)</label>
+                    <select
+                      value={consumerForm.ackPolicy}
+                      onChange={(e) => setConsumerForm({ ...consumerForm, ackPolicy: Number(e.target.value) })}
+                    >
+                      {ACK_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="nats-field">
+                    <label>Ack Wait, сек</label>
+                    <input
+                      type="text"
+                      value={consumerForm.ackWaitSec}
+                      onChange={(e) => setConsumerForm({ ...consumerForm, ackWaitSec: e.target.value })}
+                    />
+                  </div>
+                  <div className="nats-field">
+                    <label>Max Deliver</label>
+                    <input
+                      type="text"
+                      placeholder="0 = без лимита"
+                      value={consumerForm.maxDeliver}
+                      onChange={(e) => setConsumerForm({ ...consumerForm, maxDeliver: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="nats-modal-foot">
+                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>Отмена</button>
+                <button type="submit" className="primary-btn" disabled={busy || !consumerForm.durable.trim()}>
+                  {dialog.kind === "edit-consumer" ? "Сохранить" : "Создать"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </ModalBackdrop>
+      )}
+
+      {/* 3. View Message Modal */}
+      {dialog?.kind === "view-message" && (
+        <ModalBackdrop onClose={() => setDialog(null)}>
+          <div className="nats-modal-window" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "780px" }}>
+            <div className="nats-modal-head">
+              <h3>Сообщение Seq #{dialog.msg.seq}</h3>
+              <button type="button" className="nats-modal-close" onClick={() => setDialog(null)}>✕</button>
+            </div>
+            <div className="nats-modal-body">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
+                <div style={{ fontSize: "0.8rem", color: "var(--muted, #a99bb8)" }}>
+                  <strong>Subject:</strong> <span className="mono" style={{ color: "#fff" }}>{dialog.msg.subject}</span>
+                </div>
+                <div style={{ fontSize: "0.74rem", color: "var(--muted, #a99bb8)" }}>
+                  {formatDateTime(dialog.msg.time)}
+                </div>
+              </div>
+
+              <div className="nats-field">
+                <label>Данные сообщения (Payload):</label>
+                <pre className="nats-code-box" style={{ maxHeight: "380px" }}>
+                  {dialog.msg.data || "— (пустое тело)"}
+                </pre>
+              </div>
+            </div>
+            <div className="nats-modal-foot">
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => copyText("msg-body", dialog.msg.data)}
+              >
+                {copiedKey === "msg-body" ? "✓ Скопировано!" : "📋 Скопировать тело"}
+              </button>
+              <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>Закрыть</button>
+            </div>
+          </div>
+        </ModalBackdrop>
+      )}
+
+      {/* 4. Danger Confirmation Modal */}
+      {dialog?.kind === "confirm-danger" && (
+        <ModalBackdrop onClose={() => setDialog(null)}>
+          <div className="nats-modal-window nats-danger-window" onClick={(e) => e.stopPropagation()}>
+            <div className="nats-modal-head nats-danger-head">
+              <h3>⚠️ {dialog.title}</h3>
+              <button type="button" className="nats-modal-close" onClick={() => setDialog(null)}>✕</button>
+            </div>
+            <div className="nats-modal-body">
+              <p className="nats-danger-prompt">{dialog.prompt}</p>
+            </div>
+            <div className="nats-modal-foot">
+              <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>Отмена</button>
+              <button
+                type="button"
+                className="danger-btn"
+                disabled={busy}
+                onClick={async () => {
+                  const fn = dialog.onConfirm;
+                  setDialog(null);
+                  await run(fn);
+                }}
+              >
+                {dialog.actionName}
+              </button>
+            </div>
+          </div>
+        </ModalBackdrop>
+      )}
     </div>
-  );
-}
-
-function previewText(value: string, max = 72): string {
-  const one = value.replace(/\s+/g, " ").trim();
-  if (!one) return "—";
-  if (one.length <= max) return one;
-  return `${one.slice(0, max)}…`;
-}
-
-function FormSection({
-  title,
-  hint,
-  children,
-  defaultOpen = false,
-}: {
-  title: string;
-  hint?: string;
-  children: ReactNode;
-  defaultOpen?: boolean;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <details
-      className="nats-card nats-form-section"
-      open={open}
-      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
-    >
-      <summary>
-        {hint ? <HintLabel hint={hint}>{title}</HintLabel> : title}
-      </summary>
-      <div className="nats-form-section-body">{children}</div>
-    </details>
-  );
-}
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: ReactNode;
-}) {
-  return (
-    <label className="filter-field">
-      <span>{hint ? <HintLabel hint={hint}>{label}</HintLabel> : label}</span>
-      {children}
-    </label>
-  );
-}
-
-function Select({
-  label,
-  hint,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  value: number;
-  options: readonly { value: number; label: string }[];
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="filter-field">
-      <span>{hint ? <HintLabel hint={hint}>{label}</HintLabel> : label}</span>
-      <select value={value} onChange={(e) => onChange(Number(e.target.value))}>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function Check({
-  label,
-  hint,
-  checked,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <label className="nats-check">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      {hint ? <HintLabel hint={hint}>{label}</HintLabel> : label}
-    </label>
   );
 }

@@ -747,7 +747,7 @@ export default function ClickHouseManagerPanel() {
 
           <button
             type="button"
-            className="secondary-btn"
+            className="secondary-btn sm"
             onClick={() => {
               loadServerInfo();
               if (activeTab === "explorer") {

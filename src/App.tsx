@@ -13,6 +13,7 @@ const UsersPanel = lazy(() => import("./components/UsersPanel"));
 const GrpcDebugPanel = lazy(() => import("./components/GrpcDebugPanel"));
 const DataApiDebugPanel = lazy(() => import("./components/DataApiDebugPanel"));
 const ClickHouseManagerPanel = lazy(() => import("./components/ClickHouseManagerPanel"));
+const PostgresManagerPanel = lazy(() => import("./components/PostgresManagerPanel"));
 
 type PanelSpec = {
   id: string;
@@ -31,6 +32,7 @@ const PANELS: PanelSpec[] = [
   { id: "grpc_debug", eyebrow: "Админка / API", title: "Отладка RPC", Component: GrpcDebugPanel },
   { id: "data", eyebrow: "Админка / API", title: "Data", Component: DataApiDebugPanel },
   { id: "clickhouse", eyebrow: "Админка / API", title: "ClickHouse", Component: ClickHouseManagerPanel },
+  { id: "postgresql", eyebrow: "Админка / API", title: "PostgreSQL", Component: PostgresManagerPanel },
 ];
 
 function PanelFallback({ eyebrow, title }: { eyebrow: string; title: string }) {

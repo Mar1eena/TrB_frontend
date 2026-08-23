@@ -73,6 +73,12 @@ export const serviceTree: ServiceNode[] = [
         kind: "service",
         description: "Схема ClickHouse: базы, таблицы, колонки через Envoy.",
       },
+      {
+        id: "postgresql",
+        label: "PostgreSQL",
+        kind: "service",
+        description: "Схема PostgreSQL: базы, схемы, таблицы, индексы, процессы через Envoy.",
+      },
     ],
   },
 ];

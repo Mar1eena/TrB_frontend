@@ -28,6 +28,8 @@ const protoModules = [
   "@marleena/trb-proto/nats/NatsServiceClientPb",
   "@marleena/trb-proto/postgresql/postgresql_pb",
   "@marleena/trb-proto/postgresql/PostgresqlServiceClientPb",
+  "@marleena/trb-proto/postgresql/admin_pb",
+  "@marleena/trb-proto/postgresql/AdminServiceClientPb",
   "@marleena/trb-proto/test/test_pb",
   "@marleena/trb-proto/test/TestServiceClientPb",
   "@marleena/trb-proto/clickhouse/admin_pb",
@@ -48,6 +50,7 @@ const protoPanelFiles = [
   "./src/components/GrpcDebugPanel.tsx",
   "./src/components/DataApiDebugPanel.tsx",
   "./src/components/ClickHouseManagerPanel.tsx",
+  "./src/components/PostgresManagerPanel.tsx",
   "./src/components/SchedulerPanel.tsx",
   "./src/components/DownloadHistoryPanel.tsx",
   "./src/components/HistoricCandlePanel.tsx",
@@ -89,6 +92,7 @@ const envoy = {
 
 const envoyProxy = {
   "/trb.nats.v1.Nats_Admin": envoy,
+  "/trb.postgresql.v1.PostgreSQL_Admin": envoy,
   "/trb.postgresql.v1.PostgreSQL": envoy,
   "/trb.test.v1.Test": envoy,
   "/trb.clickhouse.v1.ClickHouse_Admin": envoy,
