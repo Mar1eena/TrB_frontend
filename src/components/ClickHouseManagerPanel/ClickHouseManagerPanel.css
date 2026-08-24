@@ -156,6 +156,46 @@
   gap: 0.5rem;
 }
 
+.ch-conn-select {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: rgba(232, 240, 255, 0.72);
+}
+
+.ch-conn-select label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ch-conn-select form {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.ch-conn-select select,
+.ch-conn-select input {
+  max-width: 16rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.4rem;
+  border: 1px solid rgba(61, 186, 122, 0.35);
+  background: rgba(8, 18, 14, 0.85);
+  color: inherit;
+}
+
+.ch-conn-select button {
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.4rem;
+  border: 1px solid rgba(61, 186, 122, 0.45);
+  background: rgba(61, 186, 122, 0.16);
+  color: inherit;
+  cursor: pointer;
+}
+
 .ch-header h1 {
   margin: 0;
   font-size: 1.15rem;

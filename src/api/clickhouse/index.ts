@@ -1,5 +1,7 @@
 import { wrapRpcError } from "../common/errors";
 import { formatTimestamp } from "../common/converters";
+import type { DbConnection } from "../common/connection";
+import { getClickHouseConnection } from "../common/connection";
 import { chAdminPb, clickhouseAdminClient } from "./client";
 
 export * from "./client";
@@ -119,12 +121,13 @@ function grpcError(err: unknown, fallback: string): Error {
 const inflight = new Map<string, Promise<unknown>>();
 
 function coalesce<T>(key: string, run: () => Promise<T>): Promise<T> {
-  const existing = inflight.get(key);
+  const scoped = `${getClickHouseConnection() || "_"}:${key}`;
+  const existing = inflight.get(scoped);
   if (existing) return existing as Promise<T>;
   const pending = run().finally(() => {
-    if (inflight.get(key) === pending) inflight.delete(key);
+    if (inflight.get(scoped) === pending) inflight.delete(scoped);
   });
-  inflight.set(key, pending);
+  inflight.set(scoped, pending);
   return pending;
 }
 
@@ -169,6 +172,20 @@ function columnToPb(src: ChColumnWrite) {
   if (src.ttl) col.setTtl(src.ttl.trim());
   if (src.comment) col.setComment(src.comment.trim());
   return col;
+}
+
+export async function listClickHouseConnections(): Promise<DbConnection[]> {
+  try {
+    const resp = await clickhouseAdminClient.listConnections(new chAdminPb.ListConnectionsRequest());
+    return resp.getItemsList().map((item) => ({
+      name: item.getName(),
+      host: item.getHost(),
+      database: item.getDatabase(),
+      is_default: item.getIsDefault(),
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function pingClickHouse() {

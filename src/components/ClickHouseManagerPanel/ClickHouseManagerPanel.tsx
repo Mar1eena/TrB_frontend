@@ -20,6 +20,7 @@ import {
   listDisks,
   listParts,
   listProcesses,
+  listClickHouseConnections,
   listTables,
   modifyColumn,
   optimizeTable,
@@ -38,8 +39,18 @@ import {
   type ChTableOptions,
   type ChTablePart,
 } from "../../api/clickhouse";
+import {
+  getClickHouseConnection,
+  listCustomClickHouseConnections,
+  mergeDbConnections,
+  onDbConnectionChange,
+  rememberClickHouseAddress,
+  setClickHouseConnection,
+  type DbConnection,
+} from "../../api/common/connection";
 import "../../styles/tables.css";
 import "../SchedulerPanel/SchedulerPanel.css";
+import { DbConnectionSelect } from "../DbConnectionSelect";
 import "./ClickHouseManagerPanel.css";
 import CreateTableModal from "./ClickHouseCreateTableModal";
 import { useNotify } from "../../notifications";
@@ -313,6 +324,13 @@ export default function ClickHouseManagerPanel() {
   const notify = useNotify();
   const [info, setInfo] = useState<ChServerInfo | null>(null);
   const [infoChecked, setInfoChecked] = useState(false);
+  const [connectionName, setConnectionName] = useState(getClickHouseConnection);
+  const [connections, setConnections] = useState<DbConnection[]>([]);
+  const [customEpoch, setCustomEpoch] = useState(0);
+  const connectionChoices = useMemo(
+    () => mergeDbConnections(connections, listCustomClickHouseConnections()),
+    [connections, customEpoch],
+  );
   const [activeTab, setActiveTab] = useState<MainTab>("explorer");
   const [databases, setDatabases] = useState<ChDatabase[]>([]);
   const [tables, setTables] = useState<ChTable[]>([]);
@@ -560,11 +578,32 @@ export default function ClickHouseManagerPanel() {
     setParts([]);
   }, [selectedDb]);
 
-  // Initial load (coalesced at API layer against StrictMode double-mount)
+  useEffect(() => onDbConnectionChange(() => setConnectionName(getClickHouseConnection())), []);
+
   useEffect(() => {
+    void listClickHouseConnections().then((items) => {
+      setConnections(items);
+    });
+  }, [connectionName]);
+
+  // Initial load and reload when the named ClickHouse connection changes.
+  useEffect(() => {
+    setSelectedDb("");
+    setSelectedTable(null);
+    setTables([]);
+    setPreviewData(null);
+    setParts([]);
+    setProcesses([]);
+    setDisks([]);
+    setMetrics([]);
+    setAsyncMetrics([]);
+    setSqlResult(null);
+    setSqlError("");
+    setInfo(null);
+    setInfoChecked(false);
     void loadServerInfo();
     void loadDatabases(false);
-  }, [loadServerInfo, loadDatabases]);
+  }, [connectionName, loadServerInfo, loadDatabases]);
 
   // Load tables on DB selection
   useEffect(() => {
@@ -704,6 +743,17 @@ export default function ClickHouseManagerPanel() {
             <span className="dot" />
             {info ? "Online" : infoChecked ? "Offline" : "Connecting..."}
           </div>
+          <DbConnectionSelect
+            className="ch-conn-select"
+            items={connectionChoices}
+            value={connectionName}
+            placeholder="host:9000"
+            onChange={(name) => {
+              rememberClickHouseAddress(name);
+              setCustomEpoch((n) => n + 1);
+              setClickHouseConnection(name);
+            }}
+          />
         </div>
 
         {info && (

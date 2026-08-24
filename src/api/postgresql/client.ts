@@ -3,6 +3,7 @@ import { PostgreSQL_AdminClient } from "@marleena/trb-proto/postgresql/AdminServ
 import * as pgAdminPbModule from "@marleena/trb-proto/postgresql/admin_pb";
 import * as pgPbModule from "@marleena/trb-proto/postgresql/postgresql_pb";
 import { getGrpcBaseUrl } from "../common/client";
+import { getPostgresConnection, withConnectionMetadata } from "../common/connection";
 import { resolveProtoNs } from "../common/protoNs";
 
 function postgresqlGlobalNs(): unknown {
@@ -13,6 +14,7 @@ function postgresqlGlobalNs(): unknown {
 export function postgresqlAdminProto(): typeof pgAdminPbModule {
   return resolveProtoNs(pgAdminPbModule, postgresqlGlobalNs(), [
     "ListDatabasesRequest",
+    "ListConnectionsRequest",
     "TableOptionsRequest",
   ]);
 }
@@ -26,5 +28,8 @@ export function postgresqlProto(): typeof pgPbModule {
 
 export const pgAdminPb = postgresqlAdminProto();
 export const pgPb = postgresqlProto();
-export const postgresqlAdminClient = new PostgreSQL_AdminClient(getGrpcBaseUrl());
+export const postgresqlAdminClient = withConnectionMetadata(
+  new PostgreSQL_AdminClient(getGrpcBaseUrl()),
+  getPostgresConnection,
+);
 export const postgresqlClient = new PostgreSQLClient(getGrpcBaseUrl());

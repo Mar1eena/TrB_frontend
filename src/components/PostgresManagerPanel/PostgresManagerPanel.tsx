@@ -28,6 +28,7 @@ import {
   listPartitions,
   listProcesses,
   listSchemas,
+  listPostgresConnections,
   listTables,
   listTablespaces,
   modifyColumn,
@@ -51,8 +52,18 @@ import {
   type PgTablePartition,
   type PgTablespace,
 } from "../../api/postgresql";
+import {
+  getPostgresConnection,
+  listCustomPostgresConnections,
+  mergeDbConnections,
+  onDbConnectionChange,
+  rememberPostgresAddress,
+  setPostgresConnection,
+  type DbConnection,
+} from "../../api/common/connection";
 import "../../styles/tables.css";
 import "../SchedulerPanel/SchedulerPanel.css";
+import { DbConnectionSelect } from "../DbConnectionSelect";
 import "./PostgresManagerPanel.css";
 import PostgresCreateTableModal from "./PostgresCreateTableModal";
 import { useNotify } from "../../notifications";
@@ -285,6 +296,13 @@ export default function PostgresManagerPanel() {
   const notify = useNotify();
   const [info, setInfo] = useState<PgServerInfo | null>(null);
   const [infoChecked, setInfoChecked] = useState(false);
+  const [connectionName, setConnectionName] = useState(getPostgresConnection);
+  const [connections, setConnections] = useState<DbConnection[]>([]);
+  const [customEpoch, setCustomEpoch] = useState(0);
+  const connectionChoices = useMemo(
+    () => mergeDbConnections(connections, listCustomPostgresConnections()),
+    [connections, customEpoch],
+  );
   const [activeTab, setActiveTab] = useState<MainTab>("explorer");
 
   // Explorer state
@@ -586,11 +604,35 @@ export default function PostgresManagerPanel() {
     }
   }, []);
 
-  // Initial load
+  useEffect(() => onDbConnectionChange(() => setConnectionName(getPostgresConnection())), []);
+
   useEffect(() => {
+    void listPostgresConnections().then((items) => {
+      setConnections(items);
+    });
+  }, [connectionName]);
+
+  // Initial load and reload when the named PostgreSQL connection changes.
+  useEffect(() => {
+    setSelectedDb("");
+    setSelectedSchema("");
+    setSelectedTable(null);
+    setSchemas([]);
+    setTables([]);
+    setPreviewData(null);
+    setIndexes([]);
+    setPartitions([]);
+    setProcesses([]);
+    setLocks([]);
+    setTablespaces([]);
+    setMetrics([]);
+    setSqlResult(null);
+    setSqlError("");
+    setInfo(null);
+    setInfoChecked(false);
     void loadServerInfo();
     void loadDatabases(false);
-  }, [loadServerInfo, loadDatabases]);
+  }, [connectionName, loadServerInfo, loadDatabases]);
 
   // Load schemas on database change
   useEffect(() => {
@@ -758,6 +800,17 @@ export default function PostgresManagerPanel() {
             <span className="dot" />
             {info ? "Online" : infoChecked ? "Offline" : "Connecting..."}
           </div>
+          <DbConnectionSelect
+            className="pg-conn-select"
+            items={connectionChoices}
+            value={connectionName}
+            placeholder="host:5432"
+            onChange={(name) => {
+              rememberPostgresAddress(name);
+              setCustomEpoch((n) => n + 1);
+              setPostgresConnection(name);
+            }}
+          />
         </div>
 
         {info && (
