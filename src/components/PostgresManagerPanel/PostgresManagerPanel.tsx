@@ -804,7 +804,7 @@ export default function PostgresManagerPanel() {
             className="pg-conn-select"
             items={connectionChoices}
             value={connectionName}
-            placeholder="host:5432"
+            placeholder="127.0.0.1:5435 или host:5432"
             onChange={(name) => {
               rememberPostgresAddress(name);
               setCustomEpoch((n) => n + 1);

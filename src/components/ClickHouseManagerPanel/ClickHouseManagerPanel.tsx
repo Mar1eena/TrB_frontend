@@ -747,7 +747,7 @@ export default function ClickHouseManagerPanel() {
             className="ch-conn-select"
             items={connectionChoices}
             value={connectionName}
-            placeholder="host:9000"
+            placeholder="localhost:9001 или http://localhost:8124"
             onChange={(name) => {
               rememberClickHouseAddress(name);
               setCustomEpoch((n) => n + 1);
