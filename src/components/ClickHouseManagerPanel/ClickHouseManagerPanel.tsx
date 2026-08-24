@@ -380,6 +380,8 @@ export default function ClickHouseManagerPanel() {
   const [colAfter, setColAfter] = useState("");
 
   const sqlEditorRef = useRef<HTMLTextAreaElement>(null);
+  const previewSeq = useRef(0);
+  const partsSeq = useRef(0);
 
   const copyText = useCallback((key: string, text: string) => {
     navigator.clipboard.writeText(text);
@@ -442,9 +444,13 @@ export default function ClickHouseManagerPanel() {
       const list = await listTables(db);
       setTables(list);
       setSelectedTable((prev) => {
-        if (preserveSelection && prev && list.some((item) => item.name === prev.name)) {
-          const updated = list.find((item) => item.name === prev.name) ?? null;
-          return updated;
+        if (
+          preserveSelection &&
+          prev &&
+          prev.database === db &&
+          list.some((item) => item.name === prev.name)
+        ) {
+          return list.find((item) => item.name === prev.name) ?? list[0] ?? null;
         }
         return list[0] ?? null;
       });
@@ -467,6 +473,7 @@ export default function ClickHouseManagerPanel() {
 
   const loadPreview = useCallback(async (db: string, tbl: string) => {
     if (!db || !tbl) return;
+    const seq = ++previewSeq.current;
     setPreviewLoading(true);
     try {
       const res = await previewTableData({
@@ -476,24 +483,30 @@ export default function ClickHouseManagerPanel() {
         where: previewWhere.trim() || undefined,
         order_by: previewOrderBy.trim() || undefined,
       });
+      if (seq !== previewSeq.current) return;
       setPreviewData(res);
     } catch (err) {
+      if (seq !== previewSeq.current) return;
+      setPreviewData(null);
       notify.error(err instanceof Error ? err.message : String(err));
     } finally {
-      setPreviewLoading(false);
+      if (seq === previewSeq.current) setPreviewLoading(false);
     }
   }, [previewLimit, previewWhere, previewOrderBy, notify]);
 
   const loadParts = useCallback(async (db: string, tbl: string) => {
     if (!db || !tbl) return;
+    const seq = ++partsSeq.current;
     setPartsLoading(true);
     try {
       const res = await listParts(db, tbl, partsActiveOnly);
+      if (seq !== partsSeq.current) return;
       setParts(res);
     } catch (err) {
+      if (seq !== partsSeq.current) return;
       notify.error(err instanceof Error ? err.message : String(err));
     } finally {
-      setPartsLoading(false);
+      if (seq === partsSeq.current) setPartsLoading(false);
     }
   }, [partsActiveOnly, notify]);
 
@@ -536,6 +549,17 @@ export default function ClickHouseManagerPanel() {
     }
   }, []);
 
+  const selectDatabase = useCallback((name: string) => {
+    if (name === selectedDb) return;
+    previewSeq.current += 1;
+    partsSeq.current += 1;
+    setSelectedDb(name);
+    setTables([]);
+    setSelectedTable(null);
+    setPreviewData(null);
+    setParts([]);
+  }, [selectedDb]);
+
   // Initial load (coalesced at API layer against StrictMode double-mount)
   useEffect(() => {
     void loadServerInfo();
@@ -551,14 +575,14 @@ export default function ClickHouseManagerPanel() {
 
   // Load sub-tab data when table detail tab or selected table changes
   useEffect(() => {
-    if (selectedDb && selectedTable) {
-      if (tableDetailTab === "preview") {
-        loadPreview(selectedDb, selectedTable.name);
-      } else if (tableDetailTab === "parts") {
-        loadParts(selectedDb, selectedTable.name);
-      }
+    if (!selectedDb || !selectedTable) return;
+    if (selectedTable.database && selectedTable.database !== selectedDb) return;
+    if (tableDetailTab === "preview") {
+      void loadPreview(selectedDb, selectedTable.name);
+    } else if (tableDetailTab === "parts") {
+      void loadParts(selectedDb, selectedTable.name);
     }
-  }, [selectedDb, selectedTable?.name, tableDetailTab, loadPreview, loadParts]);
+  }, [selectedDb, selectedTable?.name, selectedTable?.database, tableDetailTab, loadPreview, loadParts]);
 
   // Load processes when opening the tab
   useEffect(() => {
@@ -813,10 +837,7 @@ export default function ClickHouseManagerPanel() {
                     <div
                       key={db.name}
                       className={`ch-tree-item ${isSelected ? "is-selected" : ""}`}
-                      onClick={() => {
-                        setSelectedDb(db.name);
-                        loadTables(db.name, false);
-                      }}
+                      onClick={() => selectDatabase(db.name)}
                     >
                       <div className="ch-tree-item-main">
                         <span className="ch-tree-name">
@@ -963,10 +984,7 @@ export default function ClickHouseManagerPanel() {
                         <button
                           type="button"
                           className="secondary-btn sm"
-                          onClick={() => {
-                            setTableDetailTab("preview");
-                            loadPreview(selectedDb, selectedTable.name);
-                          }}
+                          onClick={() => setTableDetailTab("preview")}
                           title="Просмотреть данные"
                         >
                           🔍 Данные
@@ -1106,20 +1124,14 @@ export default function ClickHouseManagerPanel() {
                     <button
                       type="button"
                       className={`ch-sub-tab ${tableDetailTab === "preview" ? "is-active" : ""}`}
-                      onClick={() => {
-                        setTableDetailTab("preview");
-                        loadPreview(selectedDb, selectedTable.name);
-                      }}
+                      onClick={() => setTableDetailTab("preview")}
                     >
                       🔍 Превью данных
                     </button>
                     <button
                       type="button"
                       className={`ch-sub-tab ${tableDetailTab === "parts" ? "is-active" : ""}`}
-                      onClick={() => {
-                        setTableDetailTab("parts");
-                        loadParts(selectedDb, selectedTable.name);
-                      }}
+                      onClick={() => setTableDetailTab("parts")}
                     >
                       📦 Партиции {parts.length > 0 ? `(${parts.length})` : ""}
                     </button>

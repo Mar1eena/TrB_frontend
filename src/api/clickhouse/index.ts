@@ -462,27 +462,40 @@ export async function previewTableData(params: {
   order_by?: string;
   where?: string;
 }): Promise<ChQueryResult> {
-  const req = new chAdminPb.PreviewTableDataRequest();
-  req.setDatabase(params.database.trim());
-  req.setTable(params.table.trim());
-  if (params.limit) req.setLimit(params.limit);
-  if (params.offset) req.setOffset(params.offset);
-  if (params.order_by) req.setOrderBy(params.order_by.trim());
-  if (params.where) req.setWhere(params.where.trim());
-  try {
-    const resp = await clickhouseAdminClient.previewTableData(req);
-    return {
-      columns: resp.getColumnsList(),
-      types: resp.getTypesList(),
-      rows: resp.getRowsList().map((r) => r.getValuesList()),
-      total_rows: resp.getTotalRows(),
-      elapsed_seconds: resp.getElapsedSeconds(),
-      bytes_read: resp.getBytesRead(),
-      rows_read: resp.getRowsRead(),
-    };
-  } catch (err) {
-    throw grpcError(err, "Не удалось получить превью данных таблицы");
-  }
+  const database = params.database.trim();
+  const table = params.table.trim();
+  const key = [
+    "PreviewTableData",
+    database,
+    table,
+    params.limit ?? "",
+    params.offset ?? "",
+    params.order_by?.trim() ?? "",
+    params.where?.trim() ?? "",
+  ].join(":");
+  return coalesce(key, async () => {
+    const req = new chAdminPb.PreviewTableDataRequest();
+    req.setDatabase(database);
+    req.setTable(table);
+    if (params.limit) req.setLimit(params.limit);
+    if (params.offset) req.setOffset(params.offset);
+    if (params.order_by) req.setOrderBy(params.order_by.trim());
+    if (params.where) req.setWhere(params.where.trim());
+    try {
+      const resp = await clickhouseAdminClient.previewTableData(req);
+      return {
+        columns: resp.getColumnsList(),
+        types: resp.getTypesList(),
+        rows: resp.getRowsList().map((r) => r.getValuesList()),
+        total_rows: resp.getTotalRows(),
+        elapsed_seconds: resp.getElapsedSeconds(),
+        bytes_read: resp.getBytesRead(),
+        rows_read: resp.getRowsRead(),
+      };
+    } catch (err) {
+      throw grpcError(err, "Не удалось получить превью данных таблицы");
+    }
+  });
 }
 
 export async function listParts(database: string, table: string, activeOnly = true): Promise<ChTablePart[]> {
