@@ -10,10 +10,14 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
-  CANDLE_INTERVALS,
+  INTERVAL_1DAY,
+  INTERVAL_1MIN,
+  SCHEDULER_INTERVALS,
   fetchInstruments,
   fetchTargets,
+  formatDate,
   groupTargets,
+  hasCandleDate,
   syncTargets,
 } from "../../api/scheduler";
 import { useThrottledColumnLayout } from "../../hooks/useThrottledColumnLayout";
@@ -25,19 +29,27 @@ type CatalogItem = {
   uid: string;
   name: string;
   ticker: string;
+  currency: string;
   uidL: string;
   nameL: string;
   tickerL: string;
+  currencyL: string;
+  has1min: boolean;
+  has1day: boolean;
+  first1minText: string;
+  first1dayText: string;
+  first1minMs: number;
+  first1dayMs: number;
 };
 
-type SortKey = "uid" | "name" | "ticker" | `iv:${number}`;
+type SortKey = "uid" | "name" | "ticker" | "currency" | "minDate" | "dayDate" | `iv:${number}`;
 type SortDir = "asc" | "desc";
-type TargetFilter = "all" | "with" | "without";
+type PresenceFilter = "all" | "with" | "without";
 
 const ROW_HEIGHT = 40;
 
 const INTERVAL_BIT: Record<number, number> = Object.fromEntries(
-  CANDLE_INTERVALS.map((iv, index) => [iv.value, 1 << index]),
+  SCHEDULER_INTERVALS.map((iv, index) => [iv.value, 1 << index]),
 );
 
 function maskHas(mask: number, interval: number): boolean {
@@ -51,7 +63,7 @@ function toggleMaskBit(mask: number, interval: number, enabled: boolean): number
 
 function intervalsFromMask(mask: number): number[] {
   if (!mask) return [];
-  return CANDLE_INTERVALS.filter((iv) => maskHas(mask, iv.value)).map((iv) => iv.value);
+  return SCHEDULER_INTERVALS.filter((iv) => maskHas(mask, iv.value)).map((iv) => iv.value);
 }
 
 function countActive(masks: Int32Array): number {
@@ -60,6 +72,12 @@ function countActive(masks: Int32Array): number {
     if (masks[i] !== 0) n += 1;
   }
   return n;
+}
+
+function intervalAvailable(item: CatalogItem, interval: number): boolean {
+  if (interval === INTERVAL_1MIN) return item.has1min;
+  if (interval === INTERVAL_1DAY) return item.has1day;
+  return false;
 }
 
 function buildMasks(
@@ -72,7 +90,7 @@ function buildMasks(
     const row = byUID.get(catalog[i].uid);
     if (!row) continue;
     let mask = 0;
-    for (const iv of CANDLE_INTERVALS) {
+    for (const iv of SCHEDULER_INTERVALS) {
       if (row.intervals[iv.value]) {
         mask |= INTERVAL_BIT[iv.value];
       }
@@ -147,24 +165,67 @@ const SchedulerRow = memo(function SchedulerRow({
       <div className="vtable-cell sticky-col col-ticker" title={item.ticker}>
         {item.ticker ? <span className="table-chip ticker">{item.ticker}</span> : "—"}
       </div>
-      {CANDLE_INTERVALS.map((iv) => (
-        <div
-          key={iv.value}
-          className="vtable-cell col-interval"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <input
-            type="checkbox"
-            checked={maskHas(mask, iv.value)}
-            disabled={saving}
-            onChange={(e) => onToggle(item.uid, iv.value, e.target.checked)}
-            aria-label={`${item.ticker || item.name} ${iv.label}`}
-          />
-        </div>
-      ))}
+      <div className="vtable-cell col-currency" title={item.currency || undefined}>
+        {item.currency || "—"}
+      </div>
+      <div className="vtable-cell col-date" title={item.has1min ? item.first1minText : undefined}>
+        {item.has1min ? item.first1minText : ""}
+      </div>
+      <IntervalCheck
+        label={`${item.ticker || item.name} 1 мин`}
+        interval={INTERVAL_1MIN}
+        available={item.has1min}
+        checked={maskHas(mask, INTERVAL_1MIN)}
+        saving={saving}
+        onToggle={(interval, enabled) => onToggle(item.uid, interval, enabled)}
+      />
+      <div className="vtable-cell col-date" title={item.has1day ? item.first1dayText : undefined}>
+        {item.has1day ? item.first1dayText : ""}
+      </div>
+      <IntervalCheck
+        label={`${item.ticker || item.name} 1 день`}
+        interval={INTERVAL_1DAY}
+        available={item.has1day}
+        checked={maskHas(mask, INTERVAL_1DAY)}
+        saving={saving}
+        onToggle={(interval, enabled) => onToggle(item.uid, interval, enabled)}
+      />
     </div>
   );
 });
+
+function IntervalCheck({
+  label,
+  interval,
+  available,
+  checked,
+  saving,
+  onToggle,
+}: {
+  label: string;
+  interval: number;
+  available: boolean;
+  checked: boolean;
+  saving: boolean;
+  onToggle: (interval: number, enabled: boolean) => void;
+}) {
+  const missing = !available;
+  return (
+    <div
+      className={`vtable-cell col-interval ${missing ? "is-missing-date" : ""}`}
+      title={missing ? "Нет первой свечи — интервал недоступен" : undefined}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={saving || (missing && !checked)}
+        onChange={(e) => onToggle(interval, e.target.checked)}
+        aria-label={label}
+      />
+    </div>
+  );
+}
 
 export default function SchedulerPanel() {
   const notify = useNotify();
@@ -181,7 +242,10 @@ export default function SchedulerPanel() {
   const [tickerFilter, setTickerFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
   const [uidFilter, setUidFilter] = useState("");
-  const [targetFilter, setTargetFilter] = useState<TargetFilter>("all");
+  const [targetFilter, setTargetFilter] = useState<PresenceFilter>("all");
+  const [minDateFilter, setMinDateFilter] = useState<PresenceFilter>("all");
+  const [dayDateFilter, setDayDateFilter] = useState<PresenceFilter>("all");
+  const [currencyFilter, setCurrencyFilter] = useState("all");
 
   const deferredTicker = useDeferredValue(tickerFilter);
   const deferredName = useDeferredValue(nameFilter);
@@ -196,6 +260,8 @@ export default function SchedulerPanel() {
   clearedRef.current = clearedAll;
   const overridesRef = useRef(overrides);
   overridesRef.current = overrides;
+  const catalogRef = useRef(catalog);
+  catalogRef.current = catalog;
 
   const getMask = useCallback((index: number): number => {
     const over = overridesRef.current;
@@ -218,20 +284,31 @@ export default function SchedulerPanel() {
     setLoading(true);
     try {
       const [instruments, targets] = await Promise.all([
-        fetchInstruments("", 10000, { lite: true }),
+        fetchInstruments("", 10000, { lite: false }),
         fetchTargets(),
       ]);
       // API already returns ticker order — skip expensive localeCompare sort.
       const nextCatalog: CatalogItem[] = instruments.map((item) => {
         const name = item.name || item.uid;
         const ticker = item.ticker || "";
+        const currency = item.currency || "";
+        const has1min = hasCandleDate(item.first_1min_candle_date);
+        const has1day = hasCandleDate(item.first_1day_candle_date);
         return {
           uid: item.uid,
           name,
           ticker,
+          currency,
           uidL: item.uid.toLowerCase(),
           nameL: name.toLowerCase(),
           tickerL: ticker.toLowerCase(),
+          currencyL: currency.toLowerCase(),
+          has1min,
+          has1day,
+          first1minText: has1min ? formatDate(item.first_1min_candle_date) : "",
+          first1dayText: has1day ? formatDate(item.first_1day_candle_date) : "",
+          first1minMs: has1min ? Date.parse(item.first_1min_candle_date as string) : 0,
+          first1dayMs: has1day ? Date.parse(item.first_1day_candle_date as string) : 0,
         };
       });
       const nextMasks = buildMasks(nextCatalog, groupTargets(targets));
@@ -259,6 +336,9 @@ export default function SchedulerPanel() {
     (uid: string, interval: number, enabled: boolean) => {
       const index = indexByUID.get(uid);
       if (index == null) return;
+
+      const item = catalogRef.current[index];
+      if (item && enabled && !intervalAvailable(item, interval)) return;
 
       const before = getMask(index);
       const after = toggleMaskBit(before, interval, enabled);
@@ -371,7 +451,26 @@ export default function SchedulerPanel() {
     setNameFilter("");
     setUidFilter("");
     setTargetFilter("all");
+    setMinDateFilter("all");
+    setDayDateFilter("all");
+    setCurrencyFilter("all");
   };
+
+  const currencyOptions = useMemo(() => {
+    const byLower = new Map<string, string>();
+    let empty = false;
+    for (const item of catalog) {
+      if (!item.currency) {
+        empty = true;
+        continue;
+      }
+      if (!byLower.has(item.currencyL)) byLower.set(item.currencyL, item.currency);
+    }
+    return {
+      values: Array.from(byLower.entries()).sort((a, b) => a[0].localeCompare(b[0], "ru")),
+      empty,
+    };
+  }, [catalog]);
 
   const maskSensitive =
     targetFilter !== "all" || sortKey.startsWith("iv:");
@@ -392,6 +491,17 @@ export default function SchedulerPanel() {
             : (baselineMasks[i] ?? 0);
         if (targetFilter === "with" && mask === 0) continue;
         if (targetFilter === "without" && mask !== 0) continue;
+      }
+      if (minDateFilter === "with" && !item.has1min) continue;
+      if (minDateFilter === "without" && item.has1min) continue;
+      if (dayDateFilter === "with" && !item.has1day) continue;
+      if (dayDateFilter === "without" && item.has1day) continue;
+      if (currencyFilter !== "all") {
+        if (currencyFilter === "__empty__") {
+          if (item.currency) continue;
+        } else if (item.currencyL !== currencyFilter) {
+          continue;
+        }
       }
       if (tickerQ && !item.tickerL.includes(tickerQ)) continue;
       if (nameQ && !item.nameL.includes(nameQ)) continue;
@@ -421,6 +531,12 @@ export default function SchedulerPanel() {
         cmp = a.uidL.localeCompare(b.uidL, "ru");
       } else if (sortKey === "name") {
         cmp = a.nameL.localeCompare(b.nameL, "ru");
+      } else if (sortKey === "currency") {
+        cmp = a.currencyL.localeCompare(b.currencyL, "ru");
+      } else if (sortKey === "minDate") {
+        cmp = a.first1minMs - b.first1minMs;
+      } else if (sortKey === "dayDate") {
+        cmp = a.first1dayMs - b.first1dayMs;
       } else {
         cmp = a.tickerL.localeCompare(b.tickerL, "ru");
       }
@@ -434,6 +550,9 @@ export default function SchedulerPanel() {
     deferredName,
     deferredUid,
     targetFilter,
+    minDateFilter,
+    dayDateFilter,
+    currencyFilter,
     sortKey,
     sortDir,
     maskSensitive,
@@ -459,17 +578,23 @@ export default function SchedulerPanel() {
       const minUid = 12 * rem;
       const minName = 14 * rem;
       const minTicker = 9 * rem;
-      const minIv = 2.85 * rem;
-      const minTotal = minUid + minName + minTicker + minIv * 13;
+      const minCurrency = 5 * rem;
+      const minDate = 8 * rem;
+      const minIv = 3.4 * rem;
+      const minTotal = minUid + minName + minTicker + minCurrency + minDate * 2 + minIv * 2;
       const extra = Math.max(0, available - minTotal);
-      const uid = Math.floor(minUid + extra * 0.18);
-      const name = Math.floor(minName + extra * 0.42);
-      const ticker = Math.floor(minTicker + extra * 0.18);
-      const used = uid + name + ticker;
-      const iv = Math.max(minIv, (available - used) / 13);
+      const uid = Math.floor(minUid + extra * 0.2);
+      const name = Math.floor(minName + extra * 0.36);
+      const ticker = Math.floor(minTicker + extra * 0.14);
+      const currency = Math.floor(minCurrency + extra * 0.06);
+      const date = Math.floor(minDate + extra * 0.08);
+      const used = uid + name + ticker + currency + date * 2;
+      const iv = Math.max(minIv, (available - used) / 2);
       el.style.setProperty("--col-uid", `${uid}px`);
       el.style.setProperty("--col-name", `${name}px`);
       el.style.setProperty("--col-ticker", `${ticker}px`);
+      el.style.setProperty("--col-currency", `${currency}px`);
+      el.style.setProperty("--col-date", `${date}px`);
       el.style.setProperty("--col-iv", `${iv}px`);
       el.style.setProperty("--vtable-width", `${available}px`);
     },
@@ -482,8 +607,9 @@ export default function SchedulerPanel() {
         <p className="eyebrow">Планировщик свечей</p>
         <h1>Цели догрузки свечей</h1>
         <p>
-          Отметьте интервалы у инструментов, затем нажмите «Принять», чтобы
-          сохранить в PostgreSQL. Клик по строке выделяет её; Ctrl/⌘ — множественный выбор.
+          Отметьте минутный и дневной интервалы у инструментов, затем нажмите «Принять»,
+          чтобы сохранить в PostgreSQL. Нулевая дата первой свечи помечает интервал как
+          недоступный. Клик по строке выделяет её; Ctrl/⌘ — множественный выбор.
         </p>
       </header>
 
@@ -493,11 +619,53 @@ export default function SchedulerPanel() {
             <span>Цели</span>
             <select
               value={targetFilter}
-              onChange={(e) => setTargetFilter(e.target.value as TargetFilter)}
+              onChange={(e) => setTargetFilter(e.target.value as PresenceFilter)}
             >
               <option value="all">Все</option>
               <option value="with">С интервалами</option>
               <option value="without">Без интервалов</option>
+            </select>
+          </label>
+
+          <label className="filter-field" title="first_1min_candle_date">
+            <span>1м дата</span>
+            <select
+              value={minDateFilter}
+              onChange={(e) => setMinDateFilter(e.target.value as PresenceFilter)}
+            >
+              <option value="all">Все</option>
+              <option value="with">Есть</option>
+              <option value="without">Нет</option>
+            </select>
+          </label>
+
+          <label className="filter-field" title="first_1day_candle_date">
+            <span>1д дата</span>
+            <select
+              value={dayDateFilter}
+              onChange={(e) => setDayDateFilter(e.target.value as PresenceFilter)}
+            >
+              <option value="all">Все</option>
+              <option value="with">Есть</option>
+              <option value="without">Нет</option>
+            </select>
+          </label>
+
+          <label className="filter-field">
+            <span>Валюта</span>
+            <select
+              value={currencyFilter}
+              onChange={(e) => setCurrencyFilter(e.target.value)}
+            >
+              <option value="all">Все</option>
+              {currencyOptions.values.map(([codeL, code]) => (
+                <option key={codeL} value={codeL}>
+                  {code.toUpperCase()}
+                </option>
+              ))}
+              {currencyOptions.empty ? (
+                <option value="__empty__">без валюты</option>
+              ) : null}
             </select>
           </label>
 
@@ -616,18 +784,51 @@ export default function SchedulerPanel() {
                 onSort={onSort}
                 className="sticky-col col-ticker"
               />
-              {CANDLE_INTERVALS.map((iv) => (
-                <SortHead
-                  key={iv.value}
-                  label={iv.short}
-                  column={`iv:${iv.value}`}
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={onSort}
-                  className="col-interval"
-                  title={iv.label}
-                />
-              ))}
+              <SortHead
+                label="валюта"
+                column="currency"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={onSort}
+                className="col-currency"
+                title="currency"
+              />
+              <SortHead
+                label="1м дата"
+                column="minDate"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={onSort}
+                className="col-date"
+                title="first_1min_candle_date"
+              />
+              <SortHead
+                label="1м"
+                column={`iv:${INTERVAL_1MIN}`}
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={onSort}
+                className="col-interval"
+                title="1 мин"
+              />
+              <SortHead
+                label="1д дата"
+                column="dayDate"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={onSort}
+                className="col-date"
+                title="first_1day_candle_date"
+              />
+              <SortHead
+                label="1д"
+                column={`iv:${INTERVAL_1DAY}`}
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={onSort}
+                className="col-interval"
+                title="1 день"
+              />
             </div>
 
             <div

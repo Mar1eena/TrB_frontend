@@ -44,6 +44,9 @@ export type SelectedInstrument = {
   intervals: Record<number, boolean>;
 };
 
+export const INTERVAL_1MIN = 1;
+export const INTERVAL_1DAY = 5;
+
 export const CANDLE_INTERVALS: { value: number; label: string; short: string }[] = [
   { value: 1, label: "1 мин", short: "1м" },
   { value: 6, label: "2 мин", short: "2м" },
@@ -59,6 +62,11 @@ export const CANDLE_INTERVALS: { value: number; label: string; short: string }[]
   { value: 12, label: "неделя", short: "нед" },
   { value: 13, label: "месяц", short: "мес" },
 ];
+
+/** Интервалы, которыми управляет планировщик: минутные и дневные свечи. */
+export const SCHEDULER_INTERVALS = CANDLE_INTERVALS.filter(
+  (iv) => iv.value === INTERVAL_1MIN || iv.value === INTERVAL_1DAY,
+);
 
 export function groupTargets(targets: SchedulerTarget[]): SelectedInstrument[] {
   const map = new Map<string, SelectedInstrument>();
@@ -103,11 +111,15 @@ export async function syncTargets(
   await syncSchedulerTargets(instruments, opts);
 }
 
-export function formatDate(value?: string): string {
-  if (!value) return "—";
+export function hasCandleDate(value?: string): boolean {
+  if (!value) return false;
   const d = new Date(value);
-  if (Number.isNaN(d.getTime()) || d.getFullYear() < 1971) return "—";
-  return d.toLocaleDateString("ru-RU");
+  return !Number.isNaN(d.getTime()) && d.getFullYear() >= 1971;
+}
+
+export function formatDate(value?: string): string {
+  if (!hasCandleDate(value)) return "—";
+  return new Date(value as string).toLocaleDateString("ru-RU");
 }
 
 /** Локальная дата-время с миллисекундами: DD.MM.YYYY HH:mm:ss.SSS */

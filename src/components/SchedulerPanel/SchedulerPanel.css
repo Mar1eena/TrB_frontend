@@ -132,12 +132,17 @@
   --col-uid: 14rem;
   --col-name: 16rem;
   --col-ticker: 10.5rem;
-  --col-iv: 3.2rem;
+  --col-currency: 5.5rem;
+  --col-date: 8.5rem;
+  --col-iv: 3.4rem;
   --vtable-width: 100%;
 }
 
 .vtable {
-  --vtable-cols: var(--col-uid) var(--col-name) var(--col-ticker) repeat(13, var(--col-iv));
+  --vtable-cols:
+    var(--col-uid) var(--col-name) var(--col-ticker) var(--col-currency)
+    var(--col-date) var(--col-iv)
+    var(--col-date) var(--col-iv);
   width: var(--vtable-width);
   min-width: 100%;
 }
@@ -246,6 +251,25 @@
   font-weight: 500;
 }
 
+.vtable-cell.col-currency {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(214, 204, 232, 0.88);
+}
+
+.vtable-head .col-currency .sort-btn {
+  padding: 0 0.75rem;
+}
+
+.vtable-cell.col-date {
+  font-variant-numeric: tabular-nums;
+  color: rgba(214, 204, 232, 0.88);
+}
+
+.vtable-head .col-date .sort-btn {
+  padding: 0 0.75rem;
+}
+
 .vtable-cell.col-interval {
   justify-content: center;
   padding: 0;
@@ -256,6 +280,29 @@
   height: 0.95rem;
   accent-color: var(--accent);
   cursor: pointer;
+}
+
+.vtable-cell.col-interval.is-missing-date {
+  background-color: rgba(212, 160, 48, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(212, 160, 48, 0.45);
+}
+
+.vtable-row.is-alt .vtable-cell.col-interval.is-missing-date {
+  background-color: rgba(212, 160, 48, 0.34);
+}
+
+.vtable-row:hover .vtable-cell.col-interval.is-missing-date,
+.vtable-row.is-selected .vtable-cell.col-interval.is-missing-date {
+  background-color: rgba(212, 160, 48, 0.42) !important;
+}
+
+.vtable-cell.col-interval.is-missing-date input[type="checkbox"] {
+  accent-color: #d4a017;
+}
+
+.vtable-cell.col-interval.is-missing-date input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.85;
 }
 
 .vtable-row.is-selected,
