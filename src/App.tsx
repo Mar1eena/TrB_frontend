@@ -5,6 +5,7 @@ import { NotificationsProvider } from "./notifications";
 import "./App.css";
 
 const InstrumentsPanel = lazy(() => import("./components/InstrumentsPanel/InstrumentsPanel"));
+const CandlesPanel = lazy(() => import("./components/CandlesPanel/CandlesPanel"));
 const SchedulerPanel = lazy(() => import("./components/SchedulerPanel/SchedulerPanel"));
 const DownloadHistoryPanel = lazy(() => import("./components/DownloadHistoryPanel/DownloadHistoryPanel"));
 const NatsAdminPanel = lazy(() => import("./components/NatsAdminPanel/NatsAdminPanel"));
@@ -20,6 +21,7 @@ type PanelSpec = {
 
 const PANELS: PanelSpec[] = [
   { id: "instruments", eyebrow: "Сервисы", title: "Инструменты", Component: InstrumentsPanel },
+  { id: "candles", eyebrow: "Сервисы", title: "Свечи", Component: CandlesPanel },
   { id: "historicCandle_scheduler", eyebrow: "Сервисы", title: "Планировщик свечей", Component: SchedulerPanel },
   { id: "downloadHistory", eyebrow: "История", title: "История загрузок", Component: DownloadHistoryPanel },
   { id: "nats", eyebrow: "Админка / API", title: "Админка NATS", Component: NatsAdminPanel },

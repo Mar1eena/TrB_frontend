@@ -1,7 +1,7 @@
-import { clickhouseClient, chPb } from "../clickhouse/client";
+import { clickhouseClient, chPb, newListCandlesRequest, setNewestFirst } from "../clickhouse/client";
 import { postgresqlClient, pgPb } from "../postgresql/client";
 import { SharesResponse } from "@marleena/trb-proto/api/tinvest/instruments_pb";
-import { toPlain, str, num, bool } from "../common/converters";
+import { toPlain, str, num, bool, parseTimestamp } from "../common/converters";
 import { wrapRpcError } from "../common/errors";
 
 export const DATA_API_GRPC_METHODS = [
@@ -9,6 +9,7 @@ export const DATA_API_GRPC_METHODS = [
   { value: "ListInstrumentVersions", label: "ListInstrumentVersions", write: false, service: "ClickHouse" },
   { value: "UpsertInstruments", label: "UpsertInstruments", write: true, service: "ClickHouse" },
   { value: "ListLastDownloads", label: "ListLastDownloads", write: false, service: "ClickHouse" },
+  { value: "ListCandles", label: "ListCandles", write: false, service: "ClickHouse" },
   { value: "ListSchedulerTargets", label: "ListSchedulerTargets", write: false, service: "PostgreSQL" },
   { value: "SyncSchedulerTargets", label: "SyncSchedulerTargets", write: true, service: "PostgreSQL" },
 ] as const;
@@ -30,6 +31,9 @@ export function defaultDataApiRequestBody(method: string): Record<string, unknow
   }
   if (method === "ListLastDownloads") {
     return { filter: { q: "", limit: 20, offset: 0 } };
+  }
+  if (method === "ListCandles") {
+    return { uid: "", interval: 1, from: "", to: "", limit: 500, newest_first: true };
   }
   if (method === "SyncSchedulerTargets") {
     return {
@@ -115,6 +119,19 @@ export async function callDataApiGrpc(
         const req = new chPb.ListLastDownloadsRequest();
         req.setFilter(listFilterFrom(request));
         return toPlain(await clickhouseClient.listLastDownloads(req));
+      }
+      case "ListCandles": {
+        const req = newListCandlesRequest();
+        req.setUid(str(request.uid).trim());
+        req.setInterval(num(request.interval) || 1);
+        const from = parseTimestamp(str(request.from));
+        const to = parseTimestamp(str(request.to));
+        if (from) req.setFrom(from);
+        if (to) req.setTo(to);
+        const limit = num(request.limit);
+        if (limit > 0) req.setLimit(limit);
+        setNewestFirst(req, bool(request.newest_first, false));
+        return toPlain(await clickhouseClient.listCandles(req));
       }
       case "SyncSchedulerTargets": {
         const req = new pgPb.SyncSchedulerTargetsRequest();

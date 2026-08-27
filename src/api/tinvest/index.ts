@@ -3,6 +3,7 @@ export * from "./debug";
 export * from "./instruments";
 export * from "./marketdata";
 export * from "./marketdataStream";
+export * from "./candles";
 export * from "./operations";
 export * from "./operationsStream";
 export * from "./orders";

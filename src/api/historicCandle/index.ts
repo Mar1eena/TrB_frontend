@@ -19,6 +19,16 @@ export async function fetchLastDownloads(
   return listLastDownloads(q, limit);
 }
 
+export async function fetchInstrumentLastDownload(
+  uid: string,
+  interval: number,
+): Promise<LastDownload | null> {
+  const id = uid.trim();
+  if (!id) return null;
+  const rows = await listLastDownloads(id, 200);
+  return rows.find((row) => row.uid === id && row.interval === interval) ?? null;
+}
+
 export function intervalLabel(value: number | null | undefined): string {
   if (value == null || value <= 0) {
     return "—";

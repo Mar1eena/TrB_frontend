@@ -130,6 +130,53 @@ function SortHead({
   );
 }
 
+function IntervalHead({
+  label,
+  interval,
+  sortKey,
+  sortDir,
+  onSort,
+  allChecked,
+  someChecked,
+  disabled,
+  onToggleAll,
+}: {
+  label: string;
+  interval: number;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort: (key: SortKey) => void;
+  allChecked: boolean;
+  someChecked: boolean;
+  disabled: boolean;
+  onToggleAll: (interval: number, enabled: boolean) => void;
+}) {
+  const column: SortKey = `iv:${interval}`;
+  const active = sortKey === column;
+  return (
+    <div className="vtable-cell sortable col-interval interval-head" title={label}>
+      <input
+        type="checkbox"
+        checked={allChecked}
+        disabled={disabled}
+        ref={(el) => {
+          if (el) el.indeterminate = someChecked;
+        }}
+        onChange={(e) => onToggleAll(interval, e.target.checked)}
+        onClick={(e) => e.stopPropagation()}
+        aria-label={`Выбрать все: ${label}`}
+        title={`Выбрать все: ${label}`}
+      />
+      <button type="button" className="sort-btn" onClick={() => onSort(column)}>
+        <span>{label}</span>
+        <span className={`sort-indicator ${active ? "is-active" : ""}`} aria-hidden="true">
+          {active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
+        </span>
+      </button>
+    </div>
+  );
+}
+
 type RowProps = {
   item: CatalogItem;
   mask: number;
@@ -243,8 +290,8 @@ export default function SchedulerPanel() {
   const [nameFilter, setNameFilter] = useState("");
   const [uidFilter, setUidFilter] = useState("");
   const [targetFilter, setTargetFilter] = useState<PresenceFilter>("all");
-  const [minDateFilter, setMinDateFilter] = useState<PresenceFilter>("all");
-  const [dayDateFilter, setDayDateFilter] = useState<PresenceFilter>("all");
+  const [minDateFilter, setMinDateFilter] = useState<PresenceFilter>("with");
+  const [dayDateFilter, setDayDateFilter] = useState<PresenceFilter>("with");
   const [currencyFilter, setCurrencyFilter] = useState("all");
 
   const deferredTicker = useDeferredValue(tickerFilter);
@@ -451,8 +498,8 @@ export default function SchedulerPanel() {
     setNameFilter("");
     setUidFilter("");
     setTargetFilter("all");
-    setMinDateFilter("all");
-    setDayDateFilter("all");
+    setMinDateFilter("with");
+    setDayDateFilter("with");
     setCurrencyFilter("all");
   };
 
@@ -561,6 +608,63 @@ export default function SchedulerPanel() {
     maskSensitive ? baselineMasks : null,
   ]);
 
+  const setIntervalForFiltered = useCallback(
+    (interval: number, enabled: boolean) => {
+      const catalogNow = catalogRef.current;
+      const baseline = baselineRef.current;
+      const cleared = clearedRef.current;
+      const next = new Map(overridesRef.current);
+      let activeDelta = 0;
+      let changed = false;
+
+      for (const index of filteredIndices) {
+        const item = catalogNow[index];
+        if (!item || !intervalAvailable(item, interval)) continue;
+        const before = next.has(index)
+          ? next.get(index)!
+          : cleared
+            ? 0
+            : (baseline[index] ?? 0);
+        const after = toggleMaskBit(before, interval, enabled);
+        if (before === after) continue;
+        changed = true;
+        if (!cleared && after === (baseline[index] ?? 0)) {
+          next.delete(index);
+        } else {
+          next.set(index, after);
+        }
+        const wasActive = before !== 0;
+        const isActive = after !== 0;
+        if (wasActive !== isActive) {
+          activeDelta += isActive ? 1 : -1;
+        }
+      }
+
+      if (!changed) return;
+      setOverrides(next);
+      if (activeDelta) setActiveCount((n) => n + activeDelta);
+    },
+    [filteredIndices],
+  );
+
+  const intervalSelectState = useMemo(() => {
+    const min = { available: 0, checked: 0 };
+    const day = { available: 0, checked: 0 };
+    for (const index of filteredIndices) {
+      const item = catalog[index];
+      const mask = getMask(index);
+      if (item.has1min) {
+        min.available += 1;
+        if (maskHas(mask, INTERVAL_1MIN)) min.checked += 1;
+      }
+      if (item.has1day) {
+        day.available += 1;
+        if (maskHas(mask, INTERVAL_1DAY)) day.checked += 1;
+      }
+    }
+    return { min, day };
+  }, [catalog, filteredIndices, getMask, overrides, clearedAll, baselineMasks]);
+
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: filteredIndices.length,
@@ -580,7 +684,7 @@ export default function SchedulerPanel() {
       const minTicker = 9 * rem;
       const minCurrency = 5 * rem;
       const minDate = 8 * rem;
-      const minIv = 3.4 * rem;
+      const minIv = 4.6 * rem;
       const minTotal = minUid + minName + minTicker + minCurrency + minDate * 2 + minIv * 2;
       const extra = Math.max(0, available - minTotal);
       const uid = Math.floor(minUid + extra * 0.2);
@@ -606,11 +710,6 @@ export default function SchedulerPanel() {
       <header className="scheduler-header">
         <p className="eyebrow">Планировщик свечей</p>
         <h1>Цели догрузки свечей</h1>
-        <p>
-          Отметьте минутный и дневной интервалы у инструментов, затем нажмите «Принять»,
-          чтобы сохранить в PostgreSQL. Нулевая дата первой свечи помечает интервал как
-          недоступный. Клик по строке выделяет её; Ctrl/⌘ — множественный выбор.
-        </p>
       </header>
 
       <div className="filters-bar">
@@ -802,14 +901,22 @@ export default function SchedulerPanel() {
                 className="col-date"
                 title="first_1min_candle_date"
               />
-              <SortHead
+              <IntervalHead
                 label="1м"
-                column={`iv:${INTERVAL_1MIN}`}
+                interval={INTERVAL_1MIN}
                 sortKey={sortKey}
                 sortDir={sortDir}
                 onSort={onSort}
-                className="col-interval"
-                title="1 мин"
+                allChecked={
+                  intervalSelectState.min.available > 0 &&
+                  intervalSelectState.min.checked === intervalSelectState.min.available
+                }
+                someChecked={
+                  intervalSelectState.min.checked > 0 &&
+                  intervalSelectState.min.checked < intervalSelectState.min.available
+                }
+                disabled={saving || intervalSelectState.min.available === 0}
+                onToggleAll={setIntervalForFiltered}
               />
               <SortHead
                 label="1д дата"
@@ -820,14 +927,22 @@ export default function SchedulerPanel() {
                 className="col-date"
                 title="first_1day_candle_date"
               />
-              <SortHead
+              <IntervalHead
                 label="1д"
-                column={`iv:${INTERVAL_1DAY}`}
+                interval={INTERVAL_1DAY}
                 sortKey={sortKey}
                 sortDir={sortDir}
                 onSort={onSort}
-                className="col-interval"
-                title="1 день"
+                allChecked={
+                  intervalSelectState.day.available > 0 &&
+                  intervalSelectState.day.checked === intervalSelectState.day.available
+                }
+                someChecked={
+                  intervalSelectState.day.checked > 0 &&
+                  intervalSelectState.day.checked < intervalSelectState.day.available
+                }
+                disabled={saving || intervalSelectState.day.available === 0}
+                onToggleAll={setIntervalForFiltered}
               />
             </div>
 

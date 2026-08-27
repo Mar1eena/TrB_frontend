@@ -51,6 +51,7 @@ const protoPanelFiles = [
   "./src/components/SchedulerPanel/SchedulerPanel.tsx",
   "./src/components/DownloadHistoryPanel/DownloadHistoryPanel.tsx",
   "./src/components/InstrumentsPanel/InstrumentsPanel.tsx",
+  "./src/components/CandlesPanel/CandlesPanel.tsx",
 ];
 
 /**
@@ -59,7 +60,7 @@ const protoPanelFiles = [
  * exports.Name = exports.Name so lazy panels can import constructors.
  */
 function protobufStaticExports(): Plugin {
-  const marker = "/* protobuf-static-exports */";
+  const marker = "/* protobuf-static-exports-3 */";
   return {
     name: "protobuf-static-exports",
     enforce: "pre",
@@ -85,6 +86,20 @@ function protobufStaticExports(): Plugin {
 const envoy = {
   target: "http://127.0.0.1:8081",
   changeOrigin: true,
+  timeout: 0,
+  proxyTimeout: 0,
+  configure(proxy: { on: (event: string, listener: (...args: unknown[]) => void) => void }) {
+    proxy.on("proxyRes", (proxyRes, _req, res) => {
+      const incoming = proxyRes as { headers?: Record<string, unknown> };
+      const outgoing = res as { setHeader?: (name: string, value: string) => void };
+      const encoding = String(incoming.headers?.["transfer-encoding"] ?? "");
+      const contentType = String(incoming.headers?.["content-type"] ?? "");
+      if (encoding.includes("chunked") || contentType.includes("grpc")) {
+        outgoing.setHeader?.("X-Accel-Buffering", "no");
+        outgoing.setHeader?.("Cache-Control", "no-cache");
+      }
+    });
+  },
 };
 
 const envoyProxy = {
@@ -126,6 +141,9 @@ export default defineConfig({
           if (id.includes("node_modules/@tanstack/react-virtual")) {
             return "virtual";
           }
+          if (id.includes("node_modules/lightweight-charts") || id.includes("node_modules/fancy-canvas")) {
+            return "charts";
+          }
           if (
             id.includes("grpc-web") ||
             id.includes("google-protobuf") ||
@@ -146,6 +164,7 @@ export default defineConfig({
       "google-protobuf",
       "google-protobuf/google/protobuf/timestamp_pb.js",
       "google-protobuf/google/protobuf/descriptor_pb.js",
+      "lightweight-charts",
       ...protoModules,
     ],
   },

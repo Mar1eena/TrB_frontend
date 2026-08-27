@@ -19,6 +19,12 @@ export const serviceTree: ServiceNode[] = [
         description: "Справочник акций TrB.sht: реквизиты, версия, обновление из Тинькофф.",
       },
       {
+        id: "candles",
+        label: "Свечи",
+        kind: "service",
+        description: "График свечей: выбор инструмента, подгрузка по масштабу, стрим.",
+      },
+      {
         id: "downloadHistory",
         label: "История загрузок",
         kind: "service",
