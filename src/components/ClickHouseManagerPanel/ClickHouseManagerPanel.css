@@ -196,6 +196,16 @@
   cursor: pointer;
 }
 
+.ch-conn-select .conn-remove {
+  border-color: rgba(255, 92, 92, 0.5);
+  background: rgba(255, 80, 80, 0.14);
+}
+
+.ch-conn-select .conn-remove:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .ch-header h1 {
   margin: 0;
   font-size: 1.15rem;

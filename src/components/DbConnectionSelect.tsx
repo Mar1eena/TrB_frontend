@@ -5,12 +5,14 @@ export function DbConnectionSelect({
   items,
   value,
   onChange,
+  onRemove,
   className,
   placeholder,
 }: {
   items: DbConnection[];
   value: string;
   onChange: (name: string) => void;
+  onRemove?: (name: string) => void;
   className?: string;
   placeholder?: string;
 }) {
@@ -36,6 +38,20 @@ export function DbConnectionSelect({
           ))}
         </select>
       </label>
+      {onRemove ? (
+        <button
+          type="button"
+          className="conn-remove"
+          disabled={!selected}
+          title="Удалить выбранный адрес"
+          onClick={() => {
+            if (!selected) return;
+            onRemove(selected);
+          }}
+        >
+          Удалить
+        </button>
+      ) : null}
       <form
         onSubmit={(e) => {
           e.preventDefault();

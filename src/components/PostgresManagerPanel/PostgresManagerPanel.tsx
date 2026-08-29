@@ -53,12 +53,12 @@ import {
   type PgTablespace,
 } from "../../api/postgresql";
 import {
+  forgetPostgresAddress,
   getPostgresConnection,
-  listCustomPostgresConnections,
-  mergeDbConnections,
   onDbConnectionChange,
   rememberPostgresAddress,
   setPostgresConnection,
+  visiblePostgresConnections,
   type DbConnection,
 } from "../../api/common/connection";
 import "../../styles/tables.css";
@@ -300,7 +300,7 @@ export default function PostgresManagerPanel() {
   const [connections, setConnections] = useState<DbConnection[]>([]);
   const [customEpoch, setCustomEpoch] = useState(0);
   const connectionChoices = useMemo(
-    () => mergeDbConnections(connections, listCustomPostgresConnections()),
+    () => visiblePostgresConnections(connections),
     [connections, customEpoch],
   );
   const [activeTab, setActiveTab] = useState<MainTab>("explorer");
@@ -809,6 +809,14 @@ export default function PostgresManagerPanel() {
               rememberPostgresAddress(name);
               setCustomEpoch((n) => n + 1);
               setPostgresConnection(name);
+            }}
+            onRemove={(name) => {
+              const remaining = connectionChoices.filter((item) => item.name !== name && item.host !== name);
+              forgetPostgresAddress(name);
+              setCustomEpoch((n) => n + 1);
+              if (connectionName === name) {
+                setPostgresConnection(remaining[0]?.name ?? "");
+              }
             }}
           />
         </div>

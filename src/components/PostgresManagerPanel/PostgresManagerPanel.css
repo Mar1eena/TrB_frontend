@@ -179,6 +179,16 @@
   cursor: pointer;
 }
 
+.pg-conn-select .conn-remove {
+  border-color: rgba(255, 92, 92, 0.5);
+  background: rgba(255, 80, 80, 0.14);
+}
+
+.pg-conn-select .conn-remove:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .pg-title-wrap h1 {
   font-size: 1.15rem;
   font-weight: 700;

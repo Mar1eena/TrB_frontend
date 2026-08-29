@@ -40,12 +40,12 @@ import {
   type ChTablePart,
 } from "../../api/clickhouse";
 import {
+  forgetClickHouseAddress,
   getClickHouseConnection,
-  listCustomClickHouseConnections,
-  mergeDbConnections,
   onDbConnectionChange,
   rememberClickHouseAddress,
   setClickHouseConnection,
+  visibleClickHouseConnections,
   type DbConnection,
 } from "../../api/common/connection";
 import "../../styles/tables.css";
@@ -328,7 +328,7 @@ export default function ClickHouseManagerPanel() {
   const [connections, setConnections] = useState<DbConnection[]>([]);
   const [customEpoch, setCustomEpoch] = useState(0);
   const connectionChoices = useMemo(
-    () => mergeDbConnections(connections, listCustomClickHouseConnections()),
+    () => visibleClickHouseConnections(connections),
     [connections, customEpoch],
   );
   const [activeTab, setActiveTab] = useState<MainTab>("explorer");
@@ -752,6 +752,14 @@ export default function ClickHouseManagerPanel() {
               rememberClickHouseAddress(name);
               setCustomEpoch((n) => n + 1);
               setClickHouseConnection(name);
+            }}
+            onRemove={(name) => {
+              const remaining = connectionChoices.filter((item) => item.name !== name && item.host !== name);
+              forgetClickHouseAddress(name);
+              setCustomEpoch((n) => n + 1);
+              if (connectionName === name) {
+                setClickHouseConnection(remaining[0]?.name ?? "");
+              }
             }}
           />
         </div>

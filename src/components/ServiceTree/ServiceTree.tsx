@@ -1,10 +1,12 @@
 import { useState, type CSSProperties } from "react";
 import type { ServiceNode } from "../../data/services";
+import { ServiceIcon } from "./ServiceIcons";
 
 type ServiceTreeProps = {
   nodes: ServiceNode[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  collapsed?: boolean;
 };
 
 type TreeNodeProps = {
@@ -12,18 +14,23 @@ type TreeNodeProps = {
   depth: number;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  collapsed: boolean;
 };
 
-function TreeNode({ node, depth, selectedId, onSelect }: TreeNodeProps) {
+function TreeNode({ node, depth, selectedId, onSelect, collapsed }: TreeNodeProps) {
   const hasChildren = Boolean(node.children?.length);
   const isGroup = node.kind === "group" || hasChildren;
   const [open, setOpen] = useState(true);
   const selected = selectedId === node.id;
+  const showChildren = hasChildren && (collapsed || open);
 
   return (
-    <li className="tree-node" style={{ "--depth": depth } as CSSProperties}>
+    <li
+      className={`tree-node${isGroup ? " is-group-node" : ""}`}
+      style={{ "--depth": collapsed ? 0 : depth } as CSSProperties}
+    >
       <div className={`tree-row${selected && !isGroup ? " is-selected" : ""}`}>
-        {isGroup ? (
+        {!collapsed && isGroup ? (
           <button
             type="button"
             className="tree-toggle"
@@ -33,26 +40,28 @@ function TreeNode({ node, depth, selectedId, onSelect }: TreeNodeProps) {
           >
             {open ? "▾" : "▸"}
           </button>
-        ) : (
+        ) : !collapsed ? (
           <span className="tree-toggle-spacer" aria-hidden="true" />
-        )}
+        ) : null}
 
         <button
           type="button"
           className={`tree-label${isGroup ? " is-group" : ""}`}
+          title={node.label}
           onClick={() => {
             if (isGroup) {
-              setOpen((value) => !value);
+              if (!collapsed) setOpen((value) => !value);
               return;
             }
             onSelect(node.id);
           }}
         >
-          {node.label}
+          <ServiceIcon id={node.id} className="tree-icon" />
+          {!collapsed ? <span className="tree-label-text">{node.label}</span> : null}
         </button>
       </div>
 
-      {hasChildren && open ? (
+      {showChildren ? (
         <ul className="tree-children">
           {node.children!.map((child) => (
             <TreeNode
@@ -61,6 +70,7 @@ function TreeNode({ node, depth, selectedId, onSelect }: TreeNodeProps) {
               depth={depth + 1}
               selectedId={selectedId}
               onSelect={onSelect}
+              collapsed={collapsed}
             />
           ))}
         </ul>
@@ -73,9 +83,10 @@ export default function ServiceTree({
   nodes,
   selectedId,
   onSelect,
+  collapsed = false,
 }: ServiceTreeProps) {
   return (
-    <nav className="service-tree" aria-label="Микросервисы">
+    <nav className={`service-tree${collapsed ? " is-collapsed" : ""}`} aria-label="Микросервисы">
       <ul className="tree-root">
         {nodes.map((node) => (
           <TreeNode
@@ -84,6 +95,7 @@ export default function ServiceTree({
             depth={0}
             selectedId={selectedId}
             onSelect={onSelect}
+            collapsed={collapsed}
           />
         ))}
       </ul>

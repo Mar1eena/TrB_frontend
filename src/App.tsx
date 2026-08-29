@@ -75,6 +75,13 @@ class PanelErrorBoundary extends Component<
 export default function App() {
   const [selectedId, setSelectedId] = useState<string>("nats");
   const [panelEpoch, setPanelEpoch] = useState(0);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("trb.sidebar.collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
   const selected = findService(serviceTree, selectedId);
   const panel = PANELS.find((item) => item.id === selectedId);
   const ActivePanel = panel?.Component;
@@ -83,15 +90,48 @@ export default function App() {
     document.getElementById("boot")?.remove();
   }, []);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem("trb.sidebar.collapsed", sidebarCollapsed ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [sidebarCollapsed]);
+
   return (
     <NotificationsProvider>
-      <div className="layout">
-        <aside className="sidebar">
-          <div className="sidebar-brand">
-            TrB<span>.</span>
+      <div className={`layout${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
+        <aside className={`sidebar${sidebarCollapsed ? " is-collapsed" : ""}`}>
+          <div className="sidebar-top">
+            <div className="sidebar-brand">
+              {sidebarCollapsed ? (
+                <>
+                  T<span>.</span>
+                </>
+              ) : (
+                <>
+                  TrB<span>.</span>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              className="sidebar-toggle"
+              aria-expanded={!sidebarCollapsed}
+              aria-label={sidebarCollapsed ? "Показать панель" : "Скрыть панель"}
+              title={sidebarCollapsed ? "Показать названия" : "Скрыть названия"}
+              onClick={() => setSidebarCollapsed((value) => !value)}
+            >
+              {sidebarCollapsed ? "›" : "‹"}
+            </button>
           </div>
-          <p className="sidebar-caption">Микросервисы</p>
-          <ServiceTree nodes={serviceTree} selectedId={selectedId} onSelect={setSelectedId} />
+          {sidebarCollapsed ? null : <p className="sidebar-caption">Микросервисы</p>}
+          <ServiceTree
+            nodes={serviceTree}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            collapsed={sidebarCollapsed}
+          />
         </aside>
 
         <main className="content">
