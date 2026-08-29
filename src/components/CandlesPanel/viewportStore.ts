@@ -88,17 +88,9 @@ export class CandleViewportStore {
 
   applyLive(bar: CandleBar): CandleBar | null {
     const t = bar.time as number;
-    const prev = this.bars.get(t);
     const next: CandleBar = { ...bar, live: true };
     this.bars.set(t, next);
     if (!this.historyReady) return null;
-    if (prev && !prev.live) {
-      let lastTime = t;
-      for (const time of this.bars.keys()) {
-        if (time > lastTime) lastTime = time;
-      }
-      if (t < lastTime) return null;
-    }
     return next;
   }
 

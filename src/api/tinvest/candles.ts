@@ -1,10 +1,12 @@
 import { StatusCode } from "grpc-web";
 import type { Timestamp } from "google-protobuf/google/protobuf/timestamp_pb";
 import type { UTCTimestamp } from "lightweight-charts";
+import { PingDelaySettings } from "@marleena/trb-proto/api/tinvest/common_pb";
 import {
   Candle,
   CandleInstrument,
   GetCandlesRequest,
+  MarketDataResponse,
   MarketDataServerSideStreamRequest,
   SubscribeCandlesRequest,
   SubscriptionAction,
@@ -195,9 +197,11 @@ export function historicCandleToBar(candle: HistoricCandleRow): CandleBar | null
   );
 }
 
-export function streamCandleToBar(candle: Candle): CandleBar | null {
+export function streamCandleToBar(candle: Candle, stepSec?: number): CandleBar | null {
+  let time = asUnix(candle.getTime());
+  if (stepSec && stepSec > 0) time = alignDown(time, stepSec);
   return toBar(
-    asUnix(candle.getTime()),
+    time,
     asPrice(candle.getOpen()),
     asPrice(candle.getHigh()),
     asPrice(candle.getLow()),
@@ -251,6 +255,7 @@ export function isStreamCancelled(err: unknown): boolean {
 
 export function subscribeLiveCandles(opts: {
   instrumentId: string;
+  figi?: string;
   interval: number;
   waitingClose?: boolean;
   onCandle: (bar: CandleBar) => void;
@@ -261,8 +266,11 @@ export function subscribeLiveCandles(opts: {
   let attempt = 0;
   let current: StreamSubscription | null = null;
   let timer: number | null = null;
+  const step = intervalMeta(opts.interval).seconds;
+  const PayloadCase = MarketDataResponse.PayloadCase;
 
   const instrument = new CandleInstrument();
+  if (opts.figi) instrument.setFigi(opts.figi);
   instrument.setInstrumentId(opts.instrumentId);
   instrument.setInterval(opts.interval as SubscriptionInterval);
 
@@ -270,10 +278,15 @@ export function subscribeLiveCandles(opts: {
   subReq.setSubscriptionAction(SubscriptionAction.SUBSCRIPTION_ACTION_SUBSCRIBE);
   subReq.setInstrumentsList([instrument]);
   subReq.setWaitingClose(opts.waitingClose ?? false);
-  subReq.setCandleSourceType(GetCandlesRequest.CandleSource.CANDLE_SOURCE_EXCHANGE);
+  const source = GetCandlesRequest.CandleSource?.CANDLE_SOURCE_EXCHANGE ?? 1;
+  subReq.setCandleSourceType(source);
+
+  const ping = new PingDelaySettings();
+  ping.setPingDelayMs(5000);
 
   const req = new MarketDataServerSideStreamRequest();
   req.setSubscribeCandlesRequest(subReq);
+  req.setPingSettings(ping);
 
   const clearTimer = () => {
     if (timer != null) {
@@ -299,32 +312,38 @@ export function subscribeLiveCandles(opts: {
     current?.cancel();
     current = subscribeMarketDataServerSideStream(req, {
       onData: (resp) => {
-        const ack = resp.getSubscribeCandlesResponse();
-        if (ack) {
-          const bad = ack
-            .getCandlesSubscriptionsList()
-            .find((item) => item.getSubscriptionStatus() !== SubscriptionStatus.SUBSCRIPTION_STATUS_SUCCESS);
-          if (bad) {
-            const status = bad.getSubscriptionStatus();
-            opts.onStatus?.(false, SUB_STATUS_TEXT[status] ?? `Ошибка подписки (${status})`);
+        try {
+          const kind = resp.getPayloadCase();
+          if (kind === PayloadCase.SUBSCRIBE_CANDLES_RESPONSE) {
+            const ack = resp.getSubscribeCandlesResponse();
+            const bad = ack
+              ?.getCandlesSubscriptionsList()
+              .find((item) => item.getSubscriptionStatus() !== SubscriptionStatus.SUBSCRIPTION_STATUS_SUCCESS);
+            if (bad) {
+              const status = bad.getSubscriptionStatus();
+              opts.onStatus?.(false, SUB_STATUS_TEXT[status] ?? `Ошибка подписки (${status})`);
+              return;
+            }
+            attempt = 0;
+            opts.onStatus?.(true);
             return;
           }
+          if (kind === PayloadCase.PING) {
+            attempt = 0;
+            opts.onStatus?.(true);
+            return;
+          }
+          if (kind !== PayloadCase.CANDLE) return;
+          const candle = resp.getCandle();
+          if (!candle) return;
+          const bar = streamCandleToBar(candle, step);
+          if (!bar) return;
           attempt = 0;
           opts.onStatus?.(true);
-          return;
+          opts.onCandle(bar);
+        } catch {
+          /* не рвать стрим из‑за одной битой свечи */
         }
-        if (resp.getPing()) {
-          attempt = 0;
-          opts.onStatus?.(true);
-          return;
-        }
-        const candle = resp.getCandle();
-        if (!candle) return;
-        const bar = streamCandleToBar(candle);
-        if (!bar) return;
-        attempt = 0;
-        opts.onStatus?.(true);
-        opts.onCandle(bar);
       },
       onError: (err) => {
         if (stopped || isStreamCancelled(err)) return;

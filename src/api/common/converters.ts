@@ -89,7 +89,7 @@ export function toQuotation(val: number | string | Quotation | unknown): Quotati
 export function quotationToNumber(q?: Quotation | { units?: number; nano?: number } | null): number {
   if (!q) return 0;
   if (q instanceof Quotation) {
-    return q.getUnits() + q.getNano() / 1e9;
+    return num(q.getUnits()) + num(q.getNano()) / 1e9;
   }
   return (q.units ?? 0) + (q.nano ?? 0) / 1e9;
 }

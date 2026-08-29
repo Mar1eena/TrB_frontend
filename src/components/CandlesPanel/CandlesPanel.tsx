@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -342,16 +342,33 @@ export default function CandlesPanel() {
     setStream("connecting");
     const sub = subscribeLiveCandles({
       instrumentId: instrument.uid,
+      figi: instrument.figi,
       interval,
       waitingClose: false,
       onCandle: (bar) => {
         const live = store.applyLive(bar);
         if (!live) return;
-        candles.update(toCandle(live));
-        volume.update(toVolume(live));
-        timesRef.current = store.getSorted().map((item) => item.time as number);
-        pushHud(live);
-        paintCoverageRef.current();
+        const last = store.lastBar();
+        const paint = () => {
+          timesRef.current = store.getSorted().map((item) => item.time as number);
+          pushHud(live);
+          paintCoverageRef.current();
+        };
+        try {
+          const lastTime = last ? (last.time as number) : 0;
+          if (last && (live.time as number) < lastTime) {
+            candles.setData(store.getSorted().map(toCandle));
+            volume.setData(store.getSorted().map(toVolume));
+          } else {
+            candles.update(toCandle(live));
+            volume.update(toVolume(live));
+          }
+          paint();
+        } catch {
+          candles.setData(store.getSorted().map(toCandle));
+          volume.setData(store.getSorted().map(toVolume));
+          paint();
+        }
       },
       onStatus: (live, message) => {
         setStream(live ? "live" : "reconnecting");
@@ -413,22 +430,32 @@ export default function CandlesPanel() {
       </header>
 
       <div className="filters-bar candles-toolbar">
-        <div className="filters-row filters-fields">
+        <div className="candles-picker-row">
           <InstrumentSelect value={instrument} onChange={setInstrument} />
-          <div className="filter-field candles-intervals">
-            <span>Интервал</span>
-            <div className="interval-group" role="group" aria-label="Интервал свечей">
-              {CANDLE_INTERVALS.map((iv) => (
-                <button
-                  key={iv.value}
-                  type="button"
-                  className={`interval-btn${interval === iv.value ? " is-active" : ""}`}
-                  onClick={() => setInterval(iv.value)}
-                >
-                  {iv.short}
-                </button>
-              ))}
-            </div>
+          <div className="candles-interval-rail" role="group" aria-label="Интервал свечей">
+            {(["m", "h", "d"] as const).map((kind, gi) => {
+              const group = CANDLE_INTERVALS.filter((iv) => {
+                if (kind === "m") return iv.short.endsWith("м");
+                if (kind === "h") return iv.short.endsWith("ч");
+                return !iv.short.endsWith("м") && !iv.short.endsWith("ч");
+              });
+              return (
+                <Fragment key={kind}>
+                  {gi > 0 ? <span className="interval-sep" aria-hidden="true" /> : null}
+                  {group.map((iv) => (
+                    <button
+                      key={iv.value}
+                      type="button"
+                      title={iv.label}
+                      className={`interval-btn${interval === iv.value ? " is-active" : ""}`}
+                      onClick={() => setInterval(iv.value)}
+                    >
+                      {iv.short}
+                    </button>
+                  ))}
+                </Fragment>
+              );
+            })}
           </div>
         </div>
         {interval !== INTERVAL_1MIN && interval !== INTERVAL_1DAY ? (

@@ -24,11 +24,6 @@ function toPicked(item: Instrument): PickedInstrument {
   };
 }
 
-function labelOf(item: PickedInstrument): string {
-  const board = item.classCode ? ` [${item.classCode}]` : "";
-  return item.name ? `${item.ticker}${board} — ${item.name}` : `${item.ticker}${board}`;
-}
-
 function rankInstrument(item: Instrument): number {
   let rank = 0;
   if (item.class_code === "TQBR") rank -= 4;
@@ -40,6 +35,7 @@ function rankInstrument(item: Instrument): number {
 export default function InstrumentSelect({ value, onChange }: Props) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<PickedInstrument[]>([]);
@@ -54,6 +50,10 @@ export default function InstrumentSelect({ value, onChange }: Props) {
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
   }, [open]);
 
   useEffect(() => {
@@ -119,31 +119,49 @@ export default function InstrumentSelect({ value, onChange }: Props) {
     }
     if (event.key === "Escape") {
       setOpen(false);
+      inputRef.current?.blur();
     }
   };
 
   return (
-    <div className="filter-field candles-instrument" ref={rootRef}>
-      <span>Инструмент</span>
-      <input
-        role="combobox"
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-autocomplete="list"
-        autoComplete="off"
-        spellCheck={false}
-        placeholder="Тикер или название"
-        value={open ? query : value ? labelOf(value) : query}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => {
+    <div className={`candles-instrument${open ? " is-open" : ""}`} ref={rootRef}>
+      <div
+        className="candles-instrument-field"
+        onClick={() => {
           setQuery("");
           setOpen(true);
+          inputRef.current?.focus();
         }}
-        onKeyDown={onKeyDown}
-      />
+      >
+        <svg className="candles-instrument-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+          <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+          <path d="M16 16.5 20 20.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+        <input
+          ref={inputRef}
+          role="combobox"
+          aria-label="Инструмент"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          autoComplete="off"
+          spellCheck={false}
+          size={open ? 12 : Math.max(4, (value?.ticker.length ?? 5) + 1)}
+          value={open ? query : value?.ticker ?? query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => {
+            setQuery("");
+            setOpen(true);
+          }}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={onKeyDown}
+        />
+        {!open && value?.classCode ? <span className="candles-instrument-board">{value.classCode}</span> : null}
+        {!open && value?.name ? <span className="candles-instrument-name">{value.name}</span> : null}
+      </div>
       {open ? (
         <ul id={listId} role="listbox" className="candles-instrument-list">
           {loading ? <li className="candles-instrument-empty">Поиск…</li> : null}
