@@ -1,6 +1,6 @@
 import { parseTimestamp } from "../common/converters";
 import { wrapRpcError } from "../common/errors";
-import { indPb, indicatorsClient } from "./client";
+import { indPb, indicatorsClient, newComputeForInstrumentRequest } from "./client";
 
 export type IndicatorInfo = {
   type: number;
@@ -10,6 +10,7 @@ export type IndicatorInfo = {
 };
 
 export type IndicatorPoint = {
+  timeSec: number;
   time: string;
   values: Record<string, number>;
 };
@@ -18,7 +19,26 @@ export type ComputeResult = {
   type: number;
   params: Record<string, number>;
   points: IndicatorPoint[];
+  totalPoints: number;
 };
+
+export type ListIndicatorValuesResult = {
+  type: number;
+  params: Record<string, number>;
+  points: IndicatorPoint[];
+  hasMore: boolean;
+};
+
+export interface IndicatorConfig {
+  id: string;
+  type: number;
+  name: string;
+  params: Record<string, number>;
+  persist: boolean;
+  visible: boolean;
+  color: string;
+  lineWidth?: number;
+}
 
 function mapToRecord(map: { getEntryList(): Array<[string, number]> }): Record<string, number> {
   const out: Record<string, number> = {};
@@ -56,8 +76,9 @@ export async function computeForInstrument(params: {
   type: number;
   indicatorParams: Record<string, number>;
   persist: boolean;
+  maxResponsePoints?: number;
 }): Promise<ComputeResult> {
-  const req = new indPb.ComputeForInstrumentRequest();
+  const req = newComputeForInstrumentRequest();
   req.setUid(params.uid);
   req.setInterval(params.interval);
   const fromTs = parseTimestamp(params.from);
@@ -66,6 +87,12 @@ export async function computeForInstrument(params: {
   if (toTs) req.setTo(toTs);
   req.setType(params.type);
   req.setPersist(params.persist);
+  if (
+    params.maxResponsePoints !== undefined &&
+    typeof req.setMaxResponsePoints === "function"
+  ) {
+    req.setMaxResponsePoints(params.maxResponsePoints);
+  }
   const map = req.getParamsMap();
   for (const [key, value] of Object.entries(params.indicatorParams)) {
     if (Number.isFinite(value)) map.set(key, value);
@@ -75,10 +102,64 @@ export async function computeForInstrument(params: {
     return {
       type: resp.getType(),
       params: mapToRecord(resp.getParamsMap()),
-      points: resp.getPointsList().map((point) => ({
-        time: formatPointTime(point.getTime()),
-        values: mapToRecord(point.getValuesMap()),
-      })),
+      totalPoints: typeof resp.getTotalPoints === "function" ? resp.getTotalPoints() : resp.getPointsList().length,
+      points: resp.getPointsList().map((point) => {
+        const ts = point.getTime();
+        const sec = ts?.getSeconds?.() ?? 0;
+        return {
+          timeSec: sec,
+          time: formatPointTime(ts),
+          values: mapToRecord(point.getValuesMap()),
+        };
+      }),
+    };
+  } catch (err) {
+    throw wrapRpcError(err);
+  }
+}
+
+export async function listIndicatorValues(params: {
+  uid: string;
+  interval: number;
+  from: Date;
+  to: Date;
+  type: number;
+  indicatorParams: Record<string, number>;
+  limit?: number;
+  after?: Date;
+}): Promise<ListIndicatorValuesResult> {
+  const req = new indPb.ListIndicatorValuesRequest();
+  req.setUid(params.uid);
+  req.setInterval(params.interval);
+  const fromTs = parseTimestamp(params.from);
+  const toTs = parseTimestamp(params.to);
+  if (fromTs) req.setFrom(fromTs);
+  if (toTs) req.setTo(toTs);
+  req.setType(params.type);
+  if (params.limit) req.setLimit(params.limit);
+  if (params.after) {
+    const afterTs = parseTimestamp(params.after);
+    if (afterTs) req.setAfter(afterTs);
+  }
+  const map = req.getParamsMap();
+  for (const [key, value] of Object.entries(params.indicatorParams)) {
+    if (Number.isFinite(value)) map.set(key, value);
+  }
+  try {
+    const resp = await indicatorsClient.listIndicatorValues(req);
+    return {
+      type: resp.getType(),
+      params: mapToRecord(resp.getParamsMap()),
+      hasMore: resp.getHasMore(),
+      points: resp.getPointsList().map((point) => {
+        const ts = point.getTime();
+        const sec = ts?.getSeconds?.() ?? 0;
+        return {
+          timeSec: sec,
+          time: formatPointTime(ts),
+          values: mapToRecord(point.getValuesMap()),
+        };
+      }),
     };
   } catch (err) {
     throw wrapRpcError(err);

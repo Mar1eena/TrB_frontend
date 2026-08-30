@@ -4,7 +4,7 @@ import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
 const frontendDir = path.dirname(fileURLToPath(import.meta.url));
-const protoJs = path.resolve(frontendDir, "node_modules/@marleena/trb-proto/gen/js-ts");
+const protoJs = path.resolve(frontendDir, "../TrB_proto/gen/js-ts");
 
 const protoModules = [
   "@marleena/trb-proto/api/tinvest/common_pb",
@@ -54,7 +54,6 @@ const protoPanelFiles = [
   "./src/components/DownloadHistoryPanel/DownloadHistoryPanel.tsx",
   "./src/components/InstrumentsPanel/InstrumentsPanel.tsx",
   "./src/components/CandlesPanel/CandlesPanel.tsx",
-  "./src/components/IndicatorsPanel/IndicatorsPanel.tsx",
 ];
 
 /**
@@ -63,7 +62,7 @@ const protoPanelFiles = [
  * exports.Name = exports.Name so lazy panels can import constructors.
  */
 function protobufStaticExports(): Plugin {
-  const marker = "/* protobuf-static-exports-3 */";
+  const marker = "/* protobuf-static-exports-4 */";
   return {
     name: "protobuf-static-exports",
     enforce: "pre",

@@ -8,7 +8,6 @@ const InstrumentsPanel = lazy(() => import("./components/InstrumentsPanel/Instru
 const CandlesPanel = lazy(() => import("./components/CandlesPanel/CandlesPanel"));
 const SchedulerPanel = lazy(() => import("./components/SchedulerPanel/SchedulerPanel"));
 const DownloadHistoryPanel = lazy(() => import("./components/DownloadHistoryPanel/DownloadHistoryPanel"));
-const IndicatorsPanel = lazy(() => import("./components/IndicatorsPanel/IndicatorsPanel"));
 const NatsAdminPanel = lazy(() => import("./components/NatsAdminPanel/NatsAdminPanel"));
 const ClickHouseManagerPanel = lazy(() => import("./components/ClickHouseManagerPanel/ClickHouseManagerPanel"));
 const PostgresManagerPanel = lazy(() => import("./components/PostgresManagerPanel/PostgresManagerPanel"));
@@ -25,7 +24,6 @@ const PANELS: PanelSpec[] = [
   { id: "candles", eyebrow: "Сервисы", title: "Свечи", Component: CandlesPanel },
   { id: "historicCandle_scheduler", eyebrow: "Сервисы", title: "Планировщик свечей", Component: SchedulerPanel },
   { id: "downloadHistory", eyebrow: "История", title: "История загрузок", Component: DownloadHistoryPanel },
-  { id: "indicators", eyebrow: "Сервисы", title: "Индикаторы", Component: IndicatorsPanel },
   { id: "nats", eyebrow: "Админка / API", title: "Админка NATS", Component: NatsAdminPanel },
   { id: "clickhouse", eyebrow: "Админка / API", title: "ClickHouse", Component: ClickHouseManagerPanel },
   { id: "postgresql", eyebrow: "Админка / API", title: "PostgreSQL", Component: PostgresManagerPanel },

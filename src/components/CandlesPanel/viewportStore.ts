@@ -25,7 +25,7 @@ type StoreCallbacks = {
 
 const DEBOUNCE_MS = 80;
 const FAIL_COOLDOWN_MS = 15_000;
-const HISTORY_FROM_SEC = Date.UTC(1971, 0, 2) / 1000;
+export const HISTORY_FROM_SEC = Date.UTC(1971, 0, 2) / 1000;
 
 type PageDir = "left" | "right";
 
