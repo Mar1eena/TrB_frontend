@@ -8,7 +8,24 @@ function asPbNs(value: unknown): PbNs | null {
 type MsgCtor = (new () => object) & { prototype: object };
 
 function isMsgCtor(value: unknown): value is MsgCtor {
-  return typeof value === "function" && typeof (value as MsgCtor).prototype === "object";
+  return (
+    typeof value === "function" &&
+    typeof (value as MsgCtor).prototype === "object" &&
+    (value as MsgCtor).prototype !== null
+  );
+}
+
+/** Vite CJS interop: constructors live on the module, `.default`, or nested `.default.default`. */
+export function pbModuleLayers(module: unknown): PbNs[] {
+  const layers: PbNs[] = [];
+  const seen = new Set<unknown>();
+  let cur: unknown = module;
+  for (let i = 0; i < 4 && cur && typeof cur === "object" && !seen.has(cur); i++) {
+    seen.add(cur);
+    layers.push(cur as PbNs);
+    cur = (cur as { default?: unknown }).default;
+  }
+  return layers;
 }
 
 export function pickMessageCtor(
@@ -22,6 +39,19 @@ export function pickMessageCtor(
   return withMethods ?? ctors[0];
 }
 
+export function pickPbCtor(
+  module: unknown,
+  fromGlobal: unknown,
+  name: string,
+  requiredMethods: string[] = [],
+): MsgCtor | undefined {
+  const globalNs = asPbNs(fromGlobal);
+  return pickMessageCtor(
+    [...pbModuleLayers(module).map((ns) => ns[name]), globalNs?.[name]],
+    requiredMethods,
+  );
+}
+
 /**
  * google-protobuf CJS builds expose constructors as named ESM bindings,
  * on `default`, or via goog.exportSymbol on globalThis.
@@ -32,9 +62,7 @@ export function resolveProtoNs<T extends object>(
   fromGlobal: unknown,
   requiredCtors: string[],
 ): T {
-  const candidates = [asPbNs(module), asPbNs(module.default), asPbNs(fromGlobal)].filter(
-    Boolean,
-  ) as PbNs[];
+  const candidates = [...pbModuleLayers(module), asPbNs(fromGlobal)].filter(Boolean) as PbNs[];
 
   for (const ns of candidates) {
     if (requiredCtors.every((name) => typeof ns[name] === "function")) {

@@ -360,7 +360,7 @@ export default function CandlesPanel() {
     async (
       ind: IndicatorConfig,
       bars: CandleBar[],
-      options?: { showLoading?: boolean },
+      options?: { showLoading?: boolean; forceGap?: boolean },
     ): Promise<void> => {
       if (!instrument || bars.length === 0) return;
 
@@ -373,7 +373,7 @@ export default function CandlesPanel() {
       const sig = indicatorComputeSig(ind);
       const loaded = indLoadedRangeRef.current.get(ind.id);
       const cacheValid = loaded?.sig === sig;
-      const gaps = cacheValid ? missingIndicatorRanges(loaded, want) : [want];
+      const gaps = cacheValid && !options?.forceGap ? missingIndicatorRanges(loaded, want) : [want];
 
       const applyCached = () => {
         const map = indValuesMapRef.current.get(ind.id);
@@ -429,7 +429,7 @@ export default function CandlesPanel() {
           applyIndicatorToSeries(ind, seriesList, valueMapToPoints(merged));
         }
 
-        if (merged.size === 0 && !incremental) {
+        if (merged.size === 0 && !incremental && !ind.persist) {
           const displayRange = rangeFromBars(bars);
           if (!displayRange) return;
           const fallback = await computeIndicatorForDisplay({
@@ -470,10 +470,10 @@ export default function CandlesPanel() {
   );
 
   const ensureIndicatorPersisted = useCallback(
-    async (ind: IndicatorConfig): Promise<void> => {
+    async (ind: IndicatorConfig, targetSec?: number): Promise<void> => {
       if (!instrument || !ind.persist) return;
 
-      const key = indicatorPersistKey(instrument.uid, interval, ind);
+      const key = `${instrument.uid}:${interval}:${ind.id}:${targetSec ?? "all"}:${JSON.stringify(ind.params)}`;
       if (persistedKeysRef.current.has(key)) return;
 
       const fullRange = await resolveFullSeriesRange();
@@ -538,16 +538,37 @@ export default function CandlesPanel() {
 
         try {
           if (ind.persist) {
-            if (options?.persist !== false) {
-              try {
-                await ensureIndicatorPersisted(ind);
-              } catch (persistErr) {
-                console.warn("Indicator persist skipped:", ind.name, persistErr);
-              }
-            }
+            // 1. Сначала подгружаем существующие индикаторы из ClickHouse и сразу отображаем на графике
             await loadIndicatorFromClickHouse(ind, bars, {
               showLoading: options?.showLoading,
             });
+
+            // 2. Проверяем наличие расхождений (нет данных в ClickHouse или последний бар свечей новее последнего индикатора)
+            const map = indValuesMapRef.current.get(ind.id);
+            const lastBar = bars[bars.length - 1];
+            const lastBarSec = lastBar ? (lastBar.time as number) : 0;
+            let maxLoadedSec = 0;
+            if (map && map.size > 0) {
+              for (const t of map.keys()) {
+                if (t > maxLoadedSec) maxLoadedSec = t;
+              }
+            }
+
+            const hasDiscrepancy = !map || map.size === 0 || (lastBarSec > 0 && maxLoadedSec < lastBarSec);
+
+            // 3. Если есть расхождения — подгружаем на сервере и дополняем график
+            if (hasDiscrepancy && options?.persist !== false) {
+              try {
+                await ensureIndicatorPersisted(ind, lastBarSec);
+                // Догружаем недостающие точки из ClickHouse и дополняем график
+                await loadIndicatorFromClickHouse(ind, bars, {
+                  showLoading: false,
+                  forceGap: true,
+                });
+              } catch (persistErr) {
+                console.warn("Indicator persist/complement error:", ind.name, persistErr);
+              }
+            }
           } else {
             const want = rangeFromBarsSec(bars);
             const sig = indicatorComputeSig(ind);

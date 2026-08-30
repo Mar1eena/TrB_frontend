@@ -440,7 +440,7 @@ export default function IndicatorsModal({
                     onChange={(e) => setPersist(e.target.checked)}
                   />
                   <div>
-                    <strong>Сохранять в ClickHouse (`TrB.indicator_values_v2`)</strong>
+                    <strong>Сохранять в ClickHouse (`TrB.indicator_values`)</strong>
                     <p className="persist-hint">
                       Рассчитанные значения сохраняются в базу данных при расчёте.
                     </p>

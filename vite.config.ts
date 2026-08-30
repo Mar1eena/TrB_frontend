@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
@@ -56,31 +57,54 @@ const protoPanelFiles = [
   "./src/components/CandlesPanel/CandlesPanel.tsx",
 ];
 
+const PROTOBUF_EXPORTS_MARKER = "/* protobuf-static-exports-6 */";
+
 /**
  * google-protobuf copies symbols via goog.object.extend(exports, proto.ns),
- * which Rollup/Vite cannot see as named CJS exports. Repeat them as
- * exports.Name = exports.Name so lazy panels can import constructors.
+ * which esbuild/Vite cannot see as named CJS exports. Repeat them as
+ * exports.Name = exports.Name so prebundle and lazy panels import constructors.
  */
+function rewriteProtobufCjsExports(code: string): string | undefined {
+  if (!code.includes("goog.object.extend(exports,") || code.includes(PROTOBUF_EXPORTS_MARKER)) {
+    return;
+  }
+  const names = new Map<string, string>();
+  for (const match of code.matchAll(/goog\.exportSymbol\('([^']+)'/g)) {
+    const parts = match[1].split(".");
+    const last = parts.pop();
+    if (!last || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(last)) continue;
+    names.set(last, parts.join("."));
+  }
+  if (names.size === 0) return;
+  // Real RHS (not `exports.X = exports.X`) so esbuild emits named ESM re-exports.
+  const assigns = [...names]
+    .map(([name, ns]) => `exports.${name} = ${ns}.${name};`)
+    .join("\n");
+  return `${code}\n${PROTOBUF_EXPORTS_MARKER}\n${assigns}\n`;
+}
+
 function protobufStaticExports(): Plugin {
-  const marker = "/* protobuf-static-exports-4 */";
   return {
     name: "protobuf-static-exports",
     enforce: "pre",
     transform(code, id) {
       const file = id.split("?")[0].replace(/\\/g, "/");
       if (!file.endsWith("_pb.js") || !file.includes("/gen/js-ts/")) return;
-      if (!code.includes("goog.object.extend(exports,") || code.includes(marker)) return;
-      const names = new Set<string>();
-      for (const match of code.matchAll(/goog\.exportSymbol\('([^']+)'/g)) {
-        const last = match[1].split(".").pop();
-        if (last && /^[A-Za-z_][A-Za-z0-9_]*$/.test(last)) names.add(last);
-      }
-      if (names.size === 0) return;
-      const assigns = [...names].map((name) => `exports.${name} = exports.${name};`).join("\n");
-      return {
-        code: `${code}\n${marker}\n${assigns}\n`,
-        map: null,
-      };
+      const next = rewriteProtobufCjsExports(code);
+      if (!next) return;
+      return { code: next, map: null };
+    },
+  };
+}
+
+function protobufEsbuildNamedExports() {
+  return {
+    name: "protobuf-esbuild-named-exports",
+    setup(build: { onLoad: (opts: { filter: RegExp }, cb: (args: { path: string }) => unknown) => void }) {
+      build.onLoad({ filter: /[/\\]gen[/\\]js-ts[/\\].*_pb\.js$/ }, (args) => {
+        const code = fs.readFileSync(args.path, "utf8");
+        return { contents: rewriteProtobufCjsExports(code) ?? code, loader: "js" as const };
+      });
     },
   };
 }
@@ -170,6 +194,9 @@ export default defineConfig({
       "lightweight-charts",
       ...protoModules,
     ],
+    esbuildOptions: {
+      plugins: [protobufEsbuildNamedExports()],
+    },
   },
   server: {
     port: 3002,

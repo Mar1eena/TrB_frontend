@@ -1,6 +1,12 @@
 import { parseTimestamp } from "../common/converters";
 import { wrapRpcError } from "../common/errors";
-import { indPb, indicatorsClient, newComputeForInstrumentRequest } from "./client";
+import {
+  indPb,
+  indicatorsClient,
+  invokeListIndicatorValues,
+  newComputeForInstrumentRequest,
+  newListIndicatorValuesRequest,
+} from "./client";
 
 export type IndicatorInfo = {
   type: number;
@@ -128,7 +134,7 @@ export async function listIndicatorValues(params: {
   limit?: number;
   after?: Date;
 }): Promise<ListIndicatorValuesResult> {
-  const req = new indPb.ListIndicatorValuesRequest();
+  const req = newListIndicatorValuesRequest();
   req.setUid(params.uid);
   req.setInterval(params.interval);
   const fromTs = parseTimestamp(params.from);
@@ -146,7 +152,7 @@ export async function listIndicatorValues(params: {
     if (Number.isFinite(value)) map.set(key, value);
   }
   try {
-    const resp = await indicatorsClient.listIndicatorValues(req);
+    const resp = await invokeListIndicatorValues(req);
     return {
       type: resp.getType(),
       params: mapToRecord(resp.getParamsMap()),
