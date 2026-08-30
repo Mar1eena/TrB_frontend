@@ -36,6 +36,12 @@ export const serviceTree: ServiceNode[] = [
         kind: "service",
         description: "Оркестратор задач по историческим свечам.",
       },
+      {
+        id: "indicators",
+        label: "Индикаторы",
+        kind: "service",
+        description: "Тестовый расчёт индикаторов по свечам из ClickHouse.",
+      },
     ],
   },
   {

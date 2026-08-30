@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 type IconProps = { className?: string };
 
@@ -89,6 +89,16 @@ function PostgresIcon({ className }: IconProps) {
   );
 }
 
+function IndicatorsIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M4 19V5" />
+      <path d="M4 19h16" />
+      <path d="M7 14l4-5 3 3 5-7" />
+    </Svg>
+  );
+}
+
 function GroupIcon({ className }: IconProps) {
   return (
     <Svg className={className}>
@@ -104,6 +114,7 @@ const ICONS: Record<string, (props: IconProps) => ReactNode> = {
   candles: CandlesIcon,
   downloadHistory: HistoryIcon,
   historicCandle_scheduler: SchedulerIcon,
+  indicators: IndicatorsIcon,
   nats: NatsIcon,
   clickhouse: ClickHouseIcon,
   postgresql: PostgresIcon,

@@ -36,6 +36,8 @@ const protoModules = [
   "@marleena/trb-proto/clickhouse/AdminServiceClientPb",
   "@marleena/trb-proto/clickhouse/clickhouse_pb",
   "@marleena/trb-proto/clickhouse/ClickhouseServiceClientPb",
+  "@marleena/trb-proto/indicators/indicators_pb",
+  "@marleena/trb-proto/indicators/IndicatorsServiceClientPb",
   "@marleena/trb-proto/google/api/annotations_pb",
   "@marleena/trb-proto/google/api/http_pb",
   "@marleena/trb-proto/google/api/field_behavior_pb",
@@ -52,6 +54,7 @@ const protoPanelFiles = [
   "./src/components/DownloadHistoryPanel/DownloadHistoryPanel.tsx",
   "./src/components/InstrumentsPanel/InstrumentsPanel.tsx",
   "./src/components/CandlesPanel/CandlesPanel.tsx",
+  "./src/components/IndicatorsPanel/IndicatorsPanel.tsx",
 ];
 
 /**
@@ -109,6 +112,7 @@ const envoyProxy = {
   "/trb.test.v1.Test": envoy,
   "/trb.clickhouse.v1.ClickHouse_Admin": envoy,
   "/trb.clickhouse.v1.ClickHouse": envoy,
+  "/trb.indicators.v1.Indicators": envoy,
   "/v1": envoy,
   "^/tinkoff\\.public\\.invest\\.api\\.contract\\.v1\\..*": envoy,
   "/tinkoff.public.invest.api.contract.v1.": envoy,

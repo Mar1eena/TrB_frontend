@@ -1,26 +1,9 @@
-import { StatusCode } from "grpc-web";
 import type { Timestamp } from "google-protobuf/google/protobuf/timestamp_pb";
 import type { UTCTimestamp } from "lightweight-charts";
-import { PingDelaySettings } from "@marleena/trb-proto/api/tinvest/common_pb";
-import {
-  Candle,
-  CandleInstrument,
-  GetCandlesRequest,
-  MarketDataResponse,
-  MarketDataServerSideStreamRequest,
-  SubscribeCandlesRequest,
-  SubscriptionAction,
-  SubscriptionInterval,
-  SubscriptionStatus,
-} from "@marleena/trb-proto/api/tinvest/marketdata_pb";
 import type { HistoricCandleRow } from "@marleena/trb-proto/clickhouse/clickhouse_pb";
-import { quotationToNumber, num, parseTimestamp } from "../common/converters";
-import { TinvestRpcError, wrapRpcError } from "../common/errors";
+import { num, parseTimestamp } from "../common/converters";
+import { wrapRpcError } from "../common/errors";
 import { clickhouseClient, newListCandlesRequest, setNewestFirst } from "../clickhouse/client";
-import {
-  subscribeMarketDataServerSideStream,
-  type StreamSubscription,
-} from "./marketdataStream";
 
 export const PAGE_CANDLES = 500;
 export const PREFETCH_CANDLES = 100;
@@ -46,7 +29,6 @@ export type CandleBar = {
   low: number;
   close: number;
   volume: number;
-  live?: boolean;
 };
 
 export type IntervalMeta = {
@@ -76,15 +58,6 @@ export const INTERVAL_META: Record<number, IntervalMeta> = {
   5: chInterval(86400),
   12: chInterval(7 * 86400),
   13: chInterval(30 * 86400),
-};
-
-const SUB_STATUS_TEXT: Record<number, string> = {
-  [SubscriptionStatus.SUBSCRIPTION_STATUS_INSTRUMENT_NOT_FOUND]: "Инструмент не найден",
-  [SubscriptionStatus.SUBSCRIPTION_STATUS_INTERVAL_IS_INVALID]: "Некорректный интервал",
-  [SubscriptionStatus.SUBSCRIPTION_STATUS_LIMIT_IS_EXCEEDED]: "Превышен лимит подписок стрима",
-  [SubscriptionStatus.SUBSCRIPTION_STATUS_INTERNAL_ERROR]: "Внутренняя ошибка стрима",
-  [SubscriptionStatus.SUBSCRIPTION_STATUS_TOO_MANY_REQUESTS]: "Слишком много запросов подписки",
-  [SubscriptionStatus.SUBSCRIPTION_STATUS_SOURCE_IS_INVALID]: "Некорректный источник свечей",
 };
 
 export function intervalMeta(interval: number): IntervalMeta {
@@ -160,11 +133,6 @@ function asVolume(value: number | string | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function asPrice(q: Parameters<typeof quotationToNumber>[0]): number {
-  const n = quotationToNumber(q);
-  return Number.isFinite(n) ? n : 0;
-}
-
 function toBar(
   time: number,
   open: number,
@@ -172,7 +140,6 @@ function toBar(
   low: number,
   close: number,
   volume: number,
-  live?: boolean,
 ): CandleBar | null {
   if (time <= 0) return null;
   return {
@@ -182,7 +149,6 @@ function toBar(
     low,
     close,
     volume,
-    live,
   };
 }
 
@@ -194,20 +160,6 @@ export function historicCandleToBar(candle: HistoricCandleRow): CandleBar | null
     candle.getLow(),
     candle.getClose(),
     asVolume(candle.getVolume()),
-  );
-}
-
-export function streamCandleToBar(candle: Candle, stepSec?: number): CandleBar | null {
-  let time = asUnix(candle.getTime());
-  if (stepSec && stepSec > 0) time = alignDown(time, stepSec);
-  return toBar(
-    time,
-    asPrice(candle.getOpen()),
-    asPrice(candle.getHigh()),
-    asPrice(candle.getLow()),
-    asPrice(candle.getClose()),
-    asVolume(candle.getVolume()),
-    true,
   );
 }
 
@@ -243,127 +195,4 @@ export async function fetchHistoricCandles(params: {
   } catch (err) {
     throw wrapRpcError(err);
   }
-}
-
-export function isStreamCancelled(err: unknown): boolean {
-  if (err instanceof TinvestRpcError) {
-    return err.code === StatusCode.CANCELLED || err.code === StatusCode.OK;
-  }
-  const text = err instanceof Error ? err.message : String(err);
-  return /cancel/i.test(text);
-}
-
-export function subscribeLiveCandles(opts: {
-  instrumentId: string;
-  figi?: string;
-  interval: number;
-  waitingClose?: boolean;
-  onCandle: (bar: CandleBar) => void;
-  onStatus?: (live: boolean, message?: string) => void;
-}): StreamSubscription {
-  let stopped = false;
-  let reconnecting = false;
-  let attempt = 0;
-  let current: StreamSubscription | null = null;
-  let timer: number | null = null;
-  const step = intervalMeta(opts.interval).seconds;
-  const PayloadCase = MarketDataResponse.PayloadCase;
-
-  const instrument = new CandleInstrument();
-  if (opts.figi) instrument.setFigi(opts.figi);
-  instrument.setInstrumentId(opts.instrumentId);
-  instrument.setInterval(opts.interval as SubscriptionInterval);
-
-  const subReq = new SubscribeCandlesRequest();
-  subReq.setSubscriptionAction(SubscriptionAction.SUBSCRIPTION_ACTION_SUBSCRIBE);
-  subReq.setInstrumentsList([instrument]);
-  subReq.setWaitingClose(opts.waitingClose ?? false);
-  const source = GetCandlesRequest.CandleSource?.CANDLE_SOURCE_EXCHANGE ?? 1;
-  subReq.setCandleSourceType(source);
-
-  const ping = new PingDelaySettings();
-  ping.setPingDelayMs(5000);
-
-  const req = new MarketDataServerSideStreamRequest();
-  req.setSubscribeCandlesRequest(subReq);
-  req.setPingSettings(ping);
-
-  const clearTimer = () => {
-    if (timer != null) {
-      window.clearTimeout(timer);
-      timer = null;
-    }
-  };
-
-  const scheduleReconnect = (message?: string) => {
-    if (stopped || reconnecting) return;
-    reconnecting = true;
-    opts.onStatus?.(false, message ?? "Переподключение…");
-    const delay = Math.min(10_000, 500 * 2 ** attempt);
-    attempt += 1;
-    timer = window.setTimeout(() => {
-      reconnecting = false;
-      start();
-    }, delay);
-  };
-
-  const start = () => {
-    if (stopped) return;
-    current?.cancel();
-    current = subscribeMarketDataServerSideStream(req, {
-      onData: (resp) => {
-        try {
-          const kind = resp.getPayloadCase();
-          if (kind === PayloadCase.SUBSCRIBE_CANDLES_RESPONSE) {
-            const ack = resp.getSubscribeCandlesResponse();
-            const bad = ack
-              ?.getCandlesSubscriptionsList()
-              .find((item) => item.getSubscriptionStatus() !== SubscriptionStatus.SUBSCRIPTION_STATUS_SUCCESS);
-            if (bad) {
-              const status = bad.getSubscriptionStatus();
-              opts.onStatus?.(false, SUB_STATUS_TEXT[status] ?? `Ошибка подписки (${status})`);
-              return;
-            }
-            attempt = 0;
-            opts.onStatus?.(true);
-            return;
-          }
-          if (kind === PayloadCase.PING) {
-            attempt = 0;
-            opts.onStatus?.(true);
-            return;
-          }
-          if (kind !== PayloadCase.CANDLE) return;
-          const candle = resp.getCandle();
-          if (!candle) return;
-          const bar = streamCandleToBar(candle, step);
-          if (!bar) return;
-          attempt = 0;
-          opts.onStatus?.(true);
-          opts.onCandle(bar);
-        } catch {
-          /* не рвать стрим из‑за одной битой свечи */
-        }
-      },
-      onError: (err) => {
-        if (stopped || isStreamCancelled(err)) return;
-        scheduleReconnect(err.message);
-      },
-      onEnd: () => {
-        if (stopped) return;
-        scheduleReconnect("Стрим закрыт");
-      },
-    });
-  };
-
-  start();
-
-  return {
-    cancel: () => {
-      stopped = true;
-      clearTimer();
-      current?.cancel();
-      current = null;
-    },
-  };
 }

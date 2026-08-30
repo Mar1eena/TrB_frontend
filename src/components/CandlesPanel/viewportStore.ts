@@ -35,7 +35,6 @@ export class CandleViewportStore {
   private interval = 1;
   private gen = 0;
   private visibleCount = 80;
-  private historyReady = false;
   private timer: number | null = null;
   private leftBusy = false;
   private rightBusy = false;
@@ -56,7 +55,6 @@ export class CandleViewportStore {
     this.instrumentId = instrumentId;
     this.interval = interval;
     this.bars.clear();
-    this.historyReady = false;
     this.leftBusy = false;
     this.rightBusy = false;
     this.leftExhausted = false;
@@ -84,14 +82,6 @@ export class CandleViewportStore {
       if (!last || (bar.time as number) > (last.time as number)) last = bar;
     }
     return last;
-  }
-
-  applyLive(bar: CandleBar): CandleBar | null {
-    const t = bar.time as number;
-    const next: CandleBar = { ...bar, live: true };
-    this.bars.set(t, next);
-    if (!this.historyReady) return null;
-    return next;
   }
 
   async loadInitial(visibleCount: number): Promise<void> {
@@ -199,9 +189,7 @@ export class CandleViewportStore {
       let added = 0;
       for (const bar of fetched) {
         const t = bar.time as number;
-        const existing = this.bars.get(t);
-        if (existing?.live) continue;
-        if (!existing) added += 1;
+        if (!this.bars.has(t)) added += 1;
         this.bars.set(t, bar);
       }
 
@@ -216,7 +204,6 @@ export class CandleViewportStore {
 
       if (!added && !firstLoad) return;
 
-      this.historyReady = true;
       const bars = this.getSorted();
       const nextFirst = this.minTime();
       let prepended = 0;

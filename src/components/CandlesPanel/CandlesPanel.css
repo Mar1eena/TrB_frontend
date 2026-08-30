@@ -16,32 +16,6 @@
   flex-wrap: wrap;
 }
 
-.candles-live {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: var(--muted);
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.candles-live .dot {
-  animation: none;
-  box-shadow: none;
-  background: #6b6178;
-}
-
-.candles-live.is-connecting .dot,
-.candles-live.is-reconnecting .dot {
-  background: #d6b35a;
-}
-
-.candles-live.is-live .dot {
-  background: var(--accent);
-  animation: pulse 2s ease-out infinite;
-}
-
 .candles-coverage-label {
   color: var(--muted);
   font-size: 0.72rem;

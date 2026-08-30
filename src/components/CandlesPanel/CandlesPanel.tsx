@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -19,7 +19,7 @@ import {
   fetchInstrumentLastDownload,
   type LastDownload,
 } from "../../api/historicCandle";
-import { subscribeLiveCandles, type CandleBar } from "../../api/tinvest/candles";
+import { type CandleBar } from "../../api/tinvest/candles";
 import InstrumentSelect, { type PickedInstrument } from "./InstrumentSelect";
 import { CandleViewportStore } from "./viewportStore";
 import {
@@ -31,13 +31,10 @@ import "../SchedulerPanel/SchedulerPanel.css";
 import "./CandlesPanel.css";
 
 const LS_KEY = "trb.candles.panel.v2";
-const HISTORY_SOURCE = "clickhouse-hct";
 const UP = "#3dba7a";
 const DOWN = "#e07070";
 const VOL_UP = "rgba(61, 186, 122, 0.4)";
 const VOL_DOWN = "rgba(224, 112, 112, 0.4)";
-
-type StreamState = "idle" | "connecting" | "live" | "reconnecting";
 
 type SavedState = {
   instrument?: PickedInstrument | null;
@@ -129,20 +126,12 @@ function priceFormat(price: number): { type: "price"; precision: number; minMove
   return { type: "price", precision: 6, minMove: 0.000001 };
 }
 
-function streamLabel(state: StreamState): string {
-  if (state === "live") return "стрим";
-  if (state === "connecting") return "подключение";
-  if (state === "reconnecting") return "переподключение";
-  return "нет стрима";
-}
-
 export default function CandlesPanel() {
   const saved = useRef(loadSaved()).current;
   const [instrument, setInstrument] = useState<PickedInstrument | null>(saved.instrument);
   const [interval, setInterval] = useState(saved.interval);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [stream, setStream] = useState<StreamState>("idle");
   const [hud, setHud] = useState<CandleBar | null>(null);
   const [coverInfo, setCoverInfo] = useState<{ text: string; incomplete: boolean } | null>(null);
   const hoverRef = useRef(false);
@@ -152,22 +141,12 @@ export default function CandlesPanel() {
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const storeRef = useRef<CandleViewportStore | null>(null);
-  const hudRaf = useRef(0);
   const timesRef = useRef<number[]>([]);
   const downloadRef = useRef<DownloadCoverage | null>(null);
   const downloadRowRef = useRef<LastDownload | null>(null);
   const intervalRef = useRef(interval);
   const paintCoverageRef = useRef<() => void>(() => {});
   intervalRef.current = interval;
-
-  const pushHud = useCallback((bar: CandleBar | null) => {
-    if (hoverRef.current) return;
-    if (hudRaf.current) cancelAnimationFrame(hudRaf.current);
-    hudRaf.current = requestAnimationFrame(() => {
-      hudRaf.current = 0;
-      setHud(bar);
-    });
-  }, []);
 
   useEffect(() => {
     saveState(instrument, interval);
@@ -330,7 +309,6 @@ export default function CandlesPanel() {
 
     if (!instrument) {
       store.reset("", interval);
-      setStream("idle");
       setLoading(false);
       return;
     }
@@ -338,49 +316,7 @@ export default function CandlesPanel() {
     store.reset(instrument.uid, interval);
     const visible = Math.max(30, Math.floor((wrap?.clientWidth || 800) / 8));
     void store.loadInitial(visible);
-
-    setStream("connecting");
-    const sub = subscribeLiveCandles({
-      instrumentId: instrument.uid,
-      figi: instrument.figi,
-      interval,
-      waitingClose: false,
-      onCandle: (bar) => {
-        const live = store.applyLive(bar);
-        if (!live) return;
-        const last = store.lastBar();
-        const paint = () => {
-          timesRef.current = store.getSorted().map((item) => item.time as number);
-          pushHud(live);
-          paintCoverageRef.current();
-        };
-        try {
-          const lastTime = last ? (last.time as number) : 0;
-          if (last && (live.time as number) < lastTime) {
-            candles.setData(store.getSorted().map(toCandle));
-            volume.setData(store.getSorted().map(toVolume));
-          } else {
-            candles.update(toCandle(live));
-            volume.update(toVolume(live));
-          }
-          paint();
-        } catch {
-          candles.setData(store.getSorted().map(toCandle));
-          volume.setData(store.getSorted().map(toVolume));
-          paint();
-        }
-      },
-      onStatus: (live, message) => {
-        setStream(live ? "live" : "reconnecting");
-        if (!live && message) setError(message);
-        if (live) setError("");
-      },
-    });
-
-    return () => {
-      sub.cancel();
-    };
-  }, [instrument, interval, pushHud, HISTORY_SOURCE]);
+  }, [instrument, interval]);
 
   useEffect(() => {
     if (!instrument) {
@@ -416,10 +352,6 @@ export default function CandlesPanel() {
         <p className="eyebrow">Сервисы</p>
         <div className="candles-title-row">
           <h1>Свечи</h1>
-          <span className={`candles-live is-${stream}`}>
-            <span className="dot" />
-            {streamLabel(stream)}
-          </span>
           {loading ? <span className="candles-loading">подгрузка</span> : null}
           {instrument && coverInfo ? (
             <span className={`candles-coverage-label${coverInfo.incomplete ? " is-incomplete" : ""}`}>
@@ -477,7 +409,7 @@ export default function CandlesPanel() {
         ) : (
           <p className="hint candles-hint">
             Выберите инструмент. История из ClickHouse: порция растёт с масштабом (от 500 свечей),
-            следующая — когда до края остаётся около одного экрана. Текущая свеча — стрим T-Invest.
+            следующая — когда до края остаётся около одного экрана.
           </p>
         )}
         {error ? <p className="error candles-error">{error}</p> : null}
