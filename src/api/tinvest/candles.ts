@@ -2,12 +2,12 @@ import type { Timestamp } from "google-protobuf/google/protobuf/timestamp_pb";
 import type { UTCTimestamp } from "lightweight-charts";
 import type { HistoricCandleRow } from "@marleena/trb-proto/clickhouse/clickhouse_pb";
 import { num, parseTimestamp } from "../common/converters";
-import { wrapRpcError } from "../common/errors";
+import { globalApiCache } from "../common/cache";
 import { clickhouseClient, newListCandlesRequest, setNewestFirst } from "../clickhouse/client";
 
 export const PAGE_CANDLES = 500;
 export const PREFETCH_CANDLES = 100;
-export const MAX_PAGE_CANDLES = 8000;
+export const MAX_PAGE_CANDLES = 4000;
 
 /** Порог догрузки: не меньше 100 и не меньше одного видимого экрана. */
 export function prefetchForVisible(visibleCount: number): number {
@@ -177,22 +177,34 @@ export async function fetchHistoricCandles(params: {
   const fromTs = parseTimestamp(new Date(fromSec * 1000));
   const toTs = parseTimestamp(new Date(toSec * 1000));
   const limit = Math.min(CH_MAX_LIMIT, Math.max(1, params.limit ?? PAGE_CANDLES));
-  try {
-    const req = newListCandlesRequest();
-    req.setUid(params.instrumentId);
-    req.setInterval(params.interval);
-    if (fromTs) req.setFrom(fromTs);
-    if (toTs) req.setTo(toTs);
-    req.setLimit(limit);
-    setNewestFirst(req, Boolean(params.newestFirst));
-    const res = await clickhouseClient.listCandles(req);
-    const bars: CandleBar[] = [];
-    for (const candle of res.getItemsList()) {
-      const bar = historicCandleToBar(candle);
-      if (bar) bars.push(bar);
-    }
-    return bars;
-  } catch (err) {
-    throw wrapRpcError(err);
-  }
+  const newestFirst = Boolean(params.newestFirst);
+  const key = [
+    "ListCandles",
+    params.instrumentId,
+    params.interval,
+    Math.floor(fromSec),
+    Math.floor(toSec),
+    limit,
+    newestFirst ? 1 : 0,
+  ].join(":");
+  return globalApiCache.read(
+    key,
+    async () => {
+      const req = newListCandlesRequest();
+      req.setUid(params.instrumentId);
+      req.setInterval(params.interval);
+      if (fromTs) req.setFrom(fromTs);
+      if (toTs) req.setTo(toTs);
+      req.setLimit(limit);
+      setNewestFirst(req, newestFirst);
+      const res = await clickhouseClient.listCandles(req);
+      const bars: CandleBar[] = [];
+      for (const candle of res.getItemsList()) {
+        const bar = historicCandleToBar(candle);
+        if (bar) bars.push(bar);
+      }
+      return bars;
+    },
+    { ttlMs: 2500 },
+  );
 }

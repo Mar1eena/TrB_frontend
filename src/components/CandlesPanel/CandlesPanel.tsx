@@ -18,10 +18,6 @@ import {
 } from "lightweight-charts";
 import { CANDLE_INTERVALS, INTERVAL_1DAY, INTERVAL_1MIN } from "../../api/scheduler";
 import {
-  fetchInstrumentLastDownload,
-  type LastDownload,
-} from "../../api/historicCandle";
-import {
   type IndicatorConfig,
 } from "../../api/indicators";
 import { type CandleBar } from "../../api/tinvest/candles";
@@ -31,22 +27,15 @@ import {
   applyIndicatorToSeries,
   computeIndicatorForDisplay,
   indicatorComputeSig,
-  indicatorPersistKey,
-  loadIndicatorPagesFromClickHouse,
   missingIndicatorRanges,
-  persistIndicatorFullSeries,
   pointsForBars,
-  rangeFromBars,
   rangeFromBarsSec,
-  rangeFromDates,
+  rangeToDates,
   unionIndicatorRanges,
+  type IndicatorTimeRange,
 } from "./indicatorLoad";
-import { CandleViewportStore, HISTORY_FROM_SEC } from "./viewportStore";
-import {
-  coverageStatus,
-  downloadCoverageFrom,
-  type DownloadCoverage,
-} from "./coverageOverlay";
+import { CandleViewportStore } from "./viewportStore";
+import { coverageStatus } from "./coverageOverlay";
 import "../SchedulerPanel/SchedulerPanel.css";
 import "./CandlesPanel.css";
 
@@ -288,10 +277,7 @@ export default function CandlesPanel() {
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const storeRef = useRef<CandleViewportStore | null>(null);
   const timesRef = useRef<number[]>([]);
-  const downloadRef = useRef<DownloadCoverage | null>(null);
-  const downloadRowRef = useRef<LastDownload | null>(null);
   const intervalRef = useRef(interval);
-  const paintCoverageRef = useRef<() => void>(() => {});
   intervalRef.current = interval;
 
   // Track lightweight-chart series for indicators
@@ -299,8 +285,6 @@ export default function CandlesPanel() {
   // Store point values for fast lookup by timestamp in crosshair move
   const indValuesMapRef = useRef<Map<string, Map<number, Record<string, number>>>>(new Map());
   const indicatorLoadGenRef = useRef<Map<string, number>>(new Map());
-  const persistedKeysRef = useRef<Set<string>>(new Set());
-  const persistInFlightRef = useRef<Set<string>>(new Set());
   const latestBarsRef = useRef<CandleBar[]>([]);
   const prevIndicatorsRef = useRef<IndicatorConfig[]>([]);
   const syncedComputeSigRef = useRef<Map<string, string>>(new Map());
@@ -326,197 +310,11 @@ export default function CandlesPanel() {
     saveIndicatorsState(indicators);
   }, [indicators]);
 
-  const resolveFullSeriesRange = useCallback(async (): Promise<{ from: Date; to: Date }> => {
-    let fromSec = downloadRef.current?.startSec ?? HISTORY_FROM_SEC;
-    const cov = downloadRef.current;
-    if (cov) {
-      return { from: new Date(fromSec * 1000), to: new Date(Math.max(cov.endSec * 1000, Date.now())) };
-    }
-
-    let row = downloadRowRef.current;
-    if (!row && instrument) {
-      row = await fetchInstrumentLastDownload(instrument.uid, interval);
-      if (row) {
-        downloadRowRef.current = row;
-        downloadRef.current = downloadCoverageFrom(row);
-      }
-    }
-
-    const coverage = downloadRef.current;
-    if (coverage) {
-      fromSec = coverage.startSec;
-    }
-
-    const from = new Date(fromSec * 1000);
-
-    if (row?.last_end) {
-      const to = new Date(row.last_end);
-      if (!Number.isNaN(to.getTime())) {
-        return { from, to: new Date(Math.max(to.getTime(), Date.now())) };
-      }
-    }
-
-    const bars = latestBarsRef.current;
-    if (bars.length > 0) {
-      const last = (bars[bars.length - 1].time as number) * 1000;
-      return { from, to: new Date(Math.max(last, Date.now())) };
-    }
-
-    return { from, to: new Date() };
-  }, [instrument, interval]);
-
-  const loadIndicatorFromClickHouse = useCallback(
-    async (
-      ind: IndicatorConfig,
-      bars: CandleBar[],
-      options?: { showLoading?: boolean; forceGap?: boolean; fullSeries?: boolean },
-    ): Promise<void> => {
-      if (!instrument || bars.length === 0) return;
-
-      const barsRange = rangeFromBarsSec(bars);
-      if (!barsRange) return;
-
-      let queryRange = barsRange;
-      if (options?.fullSeries) {
-        const full = await resolveFullSeriesRange();
-        queryRange = rangeFromDates(full.from, full.to);
-      }
-
-      const seriesList = indSeriesMapRef.current.get(ind.id) ?? [];
-      if (seriesList.length === 0) return;
-
-      const sig = indicatorComputeSig(ind);
-      const loaded = indLoadedRangeRef.current.get(ind.id);
-      const cacheValid = loaded?.sig === sig;
-      const gaps =
-        cacheValid && !options?.forceGap
-          ? missingIndicatorRanges(loaded, queryRange)
-          : [queryRange];
-
-      const applyCached = () => {
-        const map = indValuesMapRef.current.get(ind.id);
-        if (map && map.size > 0) {
-          applyIndicatorToSeries(ind, seriesList, pointsForBars(map, bars));
-        }
-      };
-
-      if (gaps.length === 0) {
-        applyCached();
-        return;
-      }
-
-      const gen = bumpIndicatorLoadGen(ind.id);
-      if (options?.showLoading !== false) {
-        setLoadingIndicators((prev) => new Set(prev).add(ind.id));
-      }
-
-      const merged = new Map(
-        cacheValid ? (indValuesMapRef.current.get(ind.id) ?? new Map()) : [],
-      );
-
-      try {
-        for (const gap of gaps) {
-          if (isIndicatorLoadStale(ind.id, gen)) return;
-          const { valueMap } = await loadIndicatorPagesFromClickHouse({
-            uid: instrument.uid,
-            interval,
-            ind,
-            from: new Date(gap.fromSec * 1000),
-            to: new Date(gap.toSec * 1000),
-            seriesList,
-            applyEachPage: false,
-            isStale: () => isIndicatorLoadStale(ind.id, gen),
-            onPage: (_points, pageMap) => {
-              for (const [timeSec, values] of pageMap) {
-                merged.set(timeSec, values);
-              }
-              indValuesMapRef.current.set(ind.id, merged);
-              applyIndicatorToSeries(ind, seriesList, pointsForBars(merged, bars));
-            },
-          });
-          if (isIndicatorLoadStale(ind.id, gen)) return;
-          for (const [timeSec, values] of valueMap) {
-            merged.set(timeSec, values);
-          }
-        }
-
-        if (isIndicatorLoadStale(ind.id, gen)) return;
-
-        indValuesMapRef.current.set(ind.id, merged);
-        if (merged.size > 0) {
-          applyIndicatorToSeries(ind, seriesList, pointsForBars(merged, bars));
-        }
-
-        if (merged.size === 0 && !ind.persist) {
-          const displayRange = rangeFromBars(bars);
-          if (!displayRange) return;
-          const fallback = await computeIndicatorForDisplay({
-            uid: instrument.uid,
-            interval,
-            ind,
-            from: displayRange.from,
-            to: displayRange.to,
-          });
-          if (isIndicatorLoadStale(ind.id, gen)) return;
-          indValuesMapRef.current.set(
-            ind.id,
-            applyIndicatorToSeries(ind, seriesList, fallback),
-          );
-        }
-
-        let nextRange = cacheValid && loaded ? loaded : queryRange;
-        for (const gap of gaps) {
-          nextRange = unionIndicatorRanges(nextRange, gap);
-        }
-        nextRange = unionIndicatorRanges(nextRange, queryRange);
-        indLoadedRangeRef.current.set(ind.id, { ...nextRange, sig });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error("Indicator display load error:", ind.name, msg);
-        setError(`Индикатор ${ind.name}: ${msg}`);
-      } finally {
-        if (!isIndicatorLoadStale(ind.id, gen)) {
-          setLoadingIndicators((prev) => {
-            const next = new Set(prev);
-            next.delete(ind.id);
-            return next;
-          });
-        }
-      }
-    },
-    [instrument, interval, resolveFullSeriesRange],
-  );
-
-  const ensureIndicatorPersisted = useCallback(
-    async (ind: IndicatorConfig, targetSec?: number): Promise<void> => {
-      if (!instrument || !ind.persist) return;
-
-      const key = `${instrument.uid}:${interval}:${ind.id}:${targetSec ?? "all"}:${JSON.stringify(ind.params)}`;
-      if (persistedKeysRef.current.has(key) || persistInFlightRef.current.has(key)) return;
-
-      persistInFlightRef.current.add(key);
-      try {
-        const fullRange = await resolveFullSeriesRange();
-        await persistIndicatorFullSeries({
-          uid: instrument.uid,
-          interval,
-          ind,
-          from: fullRange.from,
-          to: fullRange.to,
-        });
-        persistedKeysRef.current.add(key);
-      } finally {
-        persistInFlightRef.current.delete(key);
-      }
-    },
-    [instrument, interval, resolveFullSeriesRange],
-  );
-
   const syncIndicators = useCallback(
     async (
       bars: CandleBar[],
       onlyIds?: string[],
-      options?: { persist?: boolean; showLoading?: boolean },
+      options?: { showLoading?: boolean },
     ) => {
       if (!instrument || bars.length === 0) return;
 
@@ -560,130 +358,57 @@ export default function CandlesPanel() {
         }
 
         try {
-          if (ind.persist) {
-            const persistKey = `${instrument.uid}:${interval}:${ind.id}:all:${JSON.stringify(ind.params)}`;
-            const needsFullPersist =
-              options?.persist !== false && !persistedKeysRef.current.has(persistKey);
+          const want = rangeFromBarsSec(bars);
+          if (!want) continue;
+          const sig = indicatorComputeSig(ind);
+          const loaded = indLoadedRangeRef.current.get(ind.id);
+          const loadedOk = loaded?.sig === sig ? loaded : undefined;
+          const gaps = missingIndicatorRanges(loadedOk, want);
 
-            const sig = indicatorComputeSig(ind);
-            const loadedMeta = indLoadedRangeRef.current.get(ind.id);
-            const fullSeriesDates = await resolveFullSeriesRange();
-            const fullRange = rangeFromDates(fullSeriesDates.from, fullSeriesDates.to);
-            const fullSeriesLoaded =
-              loadedMeta?.sig === sig &&
-              loadedMeta.fromSec <= fullRange.fromSec + 3600 &&
-              loadedMeta.toSec >= fullRange.toSec - 3600;
+          const merged =
+            loadedOk
+              ? new Map(indValuesMapRef.current.get(ind.id) ?? [])
+              : new Map<number, Record<string, number>>();
 
-            await loadIndicatorFromClickHouse(ind, bars, {
-              showLoading: options?.showLoading,
-              fullSeries: !fullSeriesLoaded,
-            });
+          if (merged.size > 0) {
+            applyIndicatorToSeries(ind, seriesList, pointsForBars(merged, bars));
+          }
 
-            const map = indValuesMapRef.current.get(ind.id);
-            const lastBar = bars[bars.length - 1];
-            const lastBarSec = lastBar ? (lastBar.time as number) : 0;
-            let maxLoadedSec = 0;
-            if (map && map.size > 0) {
-              for (const t of map.keys()) {
-                if (t > maxLoadedSec) maxLoadedSec = t;
-              }
-            }
+          if (gaps.length === 0) {
+            continue;
+          }
 
-            const hasTailGap = lastBarSec > 0 && maxLoadedSec < lastBarSec;
+          const gen = bumpIndicatorLoadGen(ind.id);
+          let nextLoaded: IndicatorTimeRange | undefined = loadedOk;
 
-            // Быстрый preview по видимому окну, пока идёт persist/полная загрузка.
-            if ((!map || map.size === 0) && bars.length > 0) {
-              const displayRange = rangeFromBars(bars);
-              if (displayRange) {
-                const gen = bumpIndicatorLoadGen(ind.id);
-                try {
-                  const fallback = await computeIndicatorForDisplay({
-                    uid: instrument.uid,
-                    interval,
-                    ind,
-                    from: displayRange.from,
-                    to: displayRange.to,
-                  });
-                  if (!isIndicatorLoadStale(ind.id, gen)) {
-                    indValuesMapRef.current.set(
-                      ind.id,
-                      applyIndicatorToSeries(ind, seriesList, fallback),
-                    );
-                  }
-                } catch (displayErr) {
-                  console.warn("Indicator display fallback error:", ind.name, displayErr);
-                }
-              }
-            }
-
-            setLoadingIndicators((prev) => {
-              const next = new Set(prev);
-              next.delete(ind.id);
-              return next;
-            });
-
-            if (needsFullPersist || hasTailGap) {
-              void ensureIndicatorPersisted(ind, lastBarSec)
-                .then(() =>
-                  loadIndicatorFromClickHouse(ind, bars, {
-                    showLoading: false,
-                    forceGap: true,
-                    fullSeries: true,
-                  }),
-                )
-                .catch((persistErr) => {
-                  console.warn("Indicator persist/complement error:", ind.name, persistErr);
-                });
-            }
-          } else {
-            const want = rangeFromBarsSec(bars);
-            const sig = indicatorComputeSig(ind);
-            const loaded = indLoadedRangeRef.current.get(ind.id);
-            if (
-              want &&
-              loaded?.sig === sig &&
-              want.fromSec >= loaded.fromSec &&
-              want.toSec <= loaded.toSec
-            ) {
-              const map = indValuesMapRef.current.get(ind.id);
-              if (map && map.size > 0) {
-                applyIndicatorToSeries(ind, seriesList, pointsForBars(map, bars));
-              }
-              continue;
-            }
-
-            const gen = bumpIndicatorLoadGen(ind.id);
-            const displayRange = rangeFromBars(bars);
-            if (!displayRange) continue;
-
+          for (const gap of gaps) {
+            const dates = rangeToDates(gap);
             const res = await computeIndicatorForDisplay({
               uid: instrument.uid,
               interval,
               ind,
-              from: displayRange.from,
-              to: displayRange.to,
+              from: dates.from,
+              to: dates.to,
+              padWarmup: !loadedOk,
             });
 
-            if (isIndicatorLoadStale(ind.id, gen)) continue;
+            if (isIndicatorLoadStale(ind.id, gen)) break;
 
-            indValuesMapRef.current.set(
-              ind.id,
-              applyIndicatorToSeries(ind, seriesList, res),
-            );
-            if (want) {
-              indLoadedRangeRef.current.set(ind.id, { ...want, sig });
+            for (const pt of res) {
+              merged.set(pt.timeSec, pt.values);
             }
-
-            setLoadingIndicators((prev) => {
-              const next = new Set(prev);
-              next.delete(ind.id);
-              return next;
-            });
+            nextLoaded = nextLoaded ? unionIndicatorRanges(nextLoaded, gap) : gap;
+            indValuesMapRef.current.set(ind.id, merged);
+            if (nextLoaded) {
+              indLoadedRangeRef.current.set(ind.id, { ...nextLoaded, sig });
+            }
+            applyIndicatorToSeries(ind, seriesList, pointsForBars(merged, bars));
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           console.error("Indicator sync error:", ind.name, msg);
           setError(`Индикатор ${ind.name}: ${msg}`);
+        } finally {
           setLoadingIndicators((prev) => {
             const next = new Set(prev);
             next.delete(ind.id);
@@ -694,7 +419,7 @@ export default function CandlesPanel() {
 
       updateHudFromLastBar();
     },
-    [indicators, instrument, interval, ensureIndicatorPersisted, loadIndicatorFromClickHouse, resolveFullSeriesRange],
+    [indicators, instrument, interval],
   );
 
   const syncIndicatorsRef = useRef(syncIndicators);
@@ -785,7 +510,6 @@ export default function CandlesPanel() {
     // Пересчитываем только добавленные/изменённые индикаторы (не весь график).
     if (latestBarsRef.current.length > 0 && changedIds.length > 0) {
       void syncIndicatorsRef.current(latestBarsRef.current, changedIds, {
-        persist: true,
         showLoading: true,
       });
     }
@@ -843,16 +567,8 @@ export default function CandlesPanel() {
     });
 
     const paintCoverage = () => {
-      setCoverInfo(
-        coverageStatus(
-          downloadRowRef.current,
-          timesRef.current,
-          intervalRef.current,
-          downloadRef.current,
-        ),
-      );
+      setCoverInfo(coverageStatus(timesRef.current, intervalRef.current));
     };
-    paintCoverageRef.current = paintCoverage;
 
     const store = new CandleViewportStore({
       onHistory: (bars, meta) => {
@@ -882,12 +598,10 @@ export default function CandlesPanel() {
         setError("");
         paintCoverage();
 
-        // Подгрузка индикаторов только по недостающему диапазону.
-        // Полный persist — при первом появлении свечей; скролл его не повторяет.
+        // Подгрузка индикаторов по видимому диапазону: один RPC на индикатор.
         if (indicatorsRef.current.some((i) => i.visible)) {
           const run = () => {
             void syncIndicatorsRef.current(latestBarsRef.current, undefined, {
-              persist: meta.firstLoad,
               showLoading: false,
             });
           };
@@ -994,10 +708,9 @@ export default function CandlesPanel() {
     setIndicatorHud(new Map());
     setLoadingIndicators(new Set());
     indicatorLoadGenRef.current.clear();
-    persistedKeysRef.current.clear();
-    persistInFlightRef.current.clear();
     indLoadedRangeRef.current.clear();
     setError("");
+    setCoverInfo(null);
     candles.setData([]);
     volume.setData([]);
     timesRef.current = [];
@@ -1012,38 +725,13 @@ export default function CandlesPanel() {
     if (!instrument) {
       store.reset("", interval);
       setLoading(false);
+      setCoverInfo(null);
       return;
     }
 
     store.reset(instrument.uid, interval);
     const visible = Math.max(30, Math.floor((wrap?.clientWidth || 800) / 8));
     void store.loadInitial(visible);
-  }, [instrument, interval]);
-
-  useEffect(() => {
-    if (!instrument) {
-      downloadRef.current = null;
-      downloadRowRef.current = null;
-      setCoverInfo(null);
-      return;
-    }
-    let cancelled = false;
-    void fetchInstrumentLastDownload(instrument.uid, interval)
-      .then((row) => {
-        if (cancelled) return;
-        downloadRowRef.current = row;
-        downloadRef.current = downloadCoverageFrom(row);
-        paintCoverageRef.current();
-      })
-      .catch(() => {
-        if (cancelled) return;
-        downloadRowRef.current = null;
-        downloadRef.current = null;
-        paintCoverageRef.current();
-      });
-    return () => {
-      cancelled = true;
-    };
   }, [instrument, interval]);
 
   const handleAddIndicator = useCallback((config: IndicatorConfig) => {

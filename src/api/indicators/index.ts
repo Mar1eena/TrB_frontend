@@ -60,21 +60,77 @@ function formatPointTime(ts: { getSeconds?: () => number } | undefined): string 
   return new Date(sec * 1000).toISOString();
 }
 
+let supportedCache: IndicatorInfo[] | null = null;
+let supportedInflight: Promise<IndicatorInfo[]> | null = null;
+
 export async function listSupportedIndicators(): Promise<IndicatorInfo[]> {
-  try {
-    const resp = await indicatorsClient.listSupported(new indPb.ListSupportedRequest());
-    return resp.getIndicatorsList().map((item) => ({
-      type: item.getType(),
-      name: item.getName(),
-      minBars: item.getMinBars(),
-      defaultParams: mapToRecord(item.getDefaultParamsMap()),
-    }));
-  } catch (err) {
-    throw wrapRpcError(err);
-  }
+  if (supportedCache && supportedCache.length > 0) return supportedCache;
+  if (supportedInflight) return supportedInflight;
+  supportedInflight = (async () => {
+    try {
+      const resp = await indicatorsClient.listSupported(new indPb.ListSupportedRequest());
+      const items = resp.getIndicatorsList().map((item) => ({
+        type: item.getType(),
+        name: item.getName(),
+        minBars: item.getMinBars(),
+        defaultParams: mapToRecord(item.getDefaultParamsMap()),
+      }));
+      if (items.length > 0) supportedCache = items;
+      return items;
+    } catch (err) {
+      throw wrapRpcError(err);
+    } finally {
+      supportedInflight = null;
+    }
+  })();
+  return supportedInflight;
+}
+
+const computeInflight = new Map<string, Promise<ComputeResult>>();
+
+function computeKey(params: {
+  uid: string;
+  interval: number;
+  from: Date;
+  to: Date;
+  type: number;
+  indicatorParams: Record<string, number>;
+  persist: boolean;
+  maxResponsePoints?: number;
+}): string {
+  return [
+    params.uid,
+    params.interval,
+    Math.floor(params.from.getTime() / 1000),
+    Math.floor(params.to.getTime() / 1000),
+    params.type,
+    JSON.stringify(params.indicatorParams),
+    params.persist ? 1 : 0,
+    params.maxResponsePoints ?? "",
+  ].join(":");
 }
 
 export async function computeForInstrument(params: {
+  uid: string;
+  interval: number;
+  from: Date;
+  to: Date;
+  type: number;
+  indicatorParams: Record<string, number>;
+  persist: boolean;
+  maxResponsePoints?: number;
+}): Promise<ComputeResult> {
+  const key = computeKey(params);
+  const pending = computeInflight.get(key);
+  if (pending) return pending;
+  const run = computeForInstrumentRpc(params).finally(() => {
+    if (computeInflight.get(key) === run) computeInflight.delete(key);
+  });
+  computeInflight.set(key, run);
+  return run;
+}
+
+async function computeForInstrumentRpc(params: {
   uid: string;
   interval: number;
   from: Date;

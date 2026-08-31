@@ -25,6 +25,8 @@ type StoreCallbacks = {
 
 const DEBOUNCE_MS = 80;
 const FAIL_COOLDOWN_MS = 15_000;
+/** Игнор авто-prefetch после первой отрисовки: график сам двигает range (setData / setVisibleLogicalRange). */
+const INITIAL_SETTLE_MS = 400;
 export const HISTORY_FROM_SEC = Date.UTC(1971, 0, 2) / 1000;
 
 type PageDir = "left" | "right";
@@ -42,6 +44,7 @@ export class CandleViewportStore {
   private rightExhausted = false;
   private leftFailUntil = 0;
   private rightFailUntil = 0;
+  private settleUntil = 0;
   private destroyed = false;
 
   private readonly cb: StoreCallbacks;
@@ -61,6 +64,7 @@ export class CandleViewportStore {
     this.rightExhausted = false;
     this.leftFailUntil = 0;
     this.rightFailUntil = 0;
+    this.settleUntil = 0;
     if (this.timer != null) {
       window.clearTimeout(this.timer);
       this.timer = null;
@@ -109,12 +113,10 @@ export class CandleViewportStore {
 
   private async ensureVisible(range: LogicalRangeLike | null): Promise<void> {
     if (!this.instrumentId || this.destroyed) return;
+    if (this.bars.size === 0) return;
+    if (Date.now() < this.settleUntil) return;
     const gen = this.gen;
     const bars = this.getSorted();
-    if (bars.length === 0) {
-      await this.fetchPage("left", gen, true);
-      return;
-    }
     const fromIdx = range?.from ?? 0;
     const toIdx = range?.to ?? bars.length - 1;
     this.visibleCount = Math.max(1, Math.ceil(toIdx - fromIdx));
@@ -213,8 +215,12 @@ export class CandleViewportStore {
           else break;
         }
       }
+      const wasFirst = firstLoad || prevFirst == null;
+      if (wasFirst) {
+        this.settleUntil = Date.now() + INITIAL_SETTLE_MS;
+      }
       this.cb.onHistory(bars, {
-        firstLoad: firstLoad || prevFirst == null,
+        firstLoad: wasFirst,
         prepended,
         visibleCount: this.visibleCount,
       });

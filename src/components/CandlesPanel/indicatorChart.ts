@@ -6,12 +6,6 @@ import type {
 } from "lightweight-charts";
 import type { IndicatorConfig, IndicatorPoint } from "../../api/indicators";
 
-export const INDICATOR_PAGE_SIZE = 50_000;
-
-export function yieldFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-}
-
 export function pointsToValueMap(points: IndicatorPoint[]): Map<number, Record<string, number>> {
   const map = new Map<number, Record<string, number>>();
   for (const pt of points) {

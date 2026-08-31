@@ -1,52 +1,27 @@
 import {
   computeForInstrument,
-  listIndicatorValues,
   type IndicatorConfig,
   type IndicatorPoint,
 } from "../../api/indicators";
-import { intervalMeta, type CandleBar } from "../../api/tinvest/candles";
-import { HISTORY_FROM_SEC } from "./viewportStore";
 import {
-  applyIndicatorPointsToSeries,
-  INDICATOR_PAGE_SIZE,
-  pointsToValueMap,
-  yieldFrame,
-} from "./indicatorChart";
+  intervalMeta,
+  PAGE_CANDLES,
+  type CandleBar,
+} from "../../api/tinvest/candles";
+import { HISTORY_FROM_SEC } from "./viewportStore";
+import { applyIndicatorPointsToSeries, pointsToValueMap } from "./indicatorChart";
 import type { ISeriesApi } from "lightweight-charts";
-
-export function indicatorPersistKey(
-  uid: string,
-  interval: number,
-  ind: IndicatorConfig,
-): string {
-  return `${uid}:${interval}:${ind.type}:${JSON.stringify(ind.params)}`;
-}
 
 export type IndicatorTimeRange = {
   fromSec: number;
   toSec: number;
 };
 
-export function rangeFromBars(bars: CandleBar[]): { from: Date; to: Date } | null {
-  if (bars.length === 0) return null;
-  return {
-    from: new Date((bars[0].time as number) * 1000),
-    to: new Date((bars[bars.length - 1].time as number) * 1000),
-  };
-}
-
 export function rangeFromBarsSec(bars: CandleBar[]): IndicatorTimeRange | null {
   if (bars.length === 0) return null;
   return {
     fromSec: bars[0].time as number,
     toSec: bars[bars.length - 1].time as number,
-  };
-}
-
-export function rangeFromDates(from: Date, to: Date): IndicatorTimeRange {
-  return {
-    fromSec: Math.floor(from.getTime() / 1000),
-    toSec: Math.floor(to.getTime() / 1000),
   };
 }
 
@@ -98,16 +73,18 @@ export function unionIndicatorRanges(
   };
 }
 
-export function valueMapToPoints(
-  valueMap: Map<number, Record<string, number>>,
-): IndicatorPoint[] {
-  const points: IndicatorPoint[] = [];
-  const times = [...valueMap.keys()].sort((a, b) => a - b);
-  for (const timeSec of times) {
-    const values = valueMap.get(timeSec);
-    if (values) points.push({ timeSec, time: "", values });
-  }
-  return points;
+export function rangeToDates(range: IndicatorTimeRange): { from: Date; to: Date } {
+  return {
+    from: new Date(range.fromSec * 1000),
+    to: new Date(range.toSec * 1000),
+  };
+}
+
+function maxResponsePointsForRange(from: Date, to: Date, interval: number): number {
+  const step = Math.max(intervalMeta(interval).seconds, 1);
+  const spanSec = Math.max(0, Math.floor(to.getTime() / 1000) - Math.floor(from.getTime() / 1000));
+  const n = Math.ceil(spanSec / step) + 64;
+  return Math.min(50_000, Math.max(PAGE_CANDLES, n));
 }
 
 /** Сколько баров TA-Lib съедает на прогреве (NaN в начале ряда). */
@@ -142,89 +119,23 @@ export function padRangeForIndicator(
   };
 }
 
-export async function persistIndicatorFullSeries(params: {
-  uid: string;
-  interval: number;
-  ind: IndicatorConfig;
-  from: Date;
-  to: Date;
-}): Promise<number> {
-  const range = padRangeForIndicator({ from: params.from, to: params.to }, params.interval, params.ind);
-  const res = await computeForInstrument({
-    uid: params.uid,
-    interval: params.interval,
-    from: range.from,
-    to: range.to,
-    type: params.ind.type,
-    indicatorParams: params.ind.params,
-    persist: true,
-    maxResponsePoints: 0,
-  });
-  return res.totalPoints;
-}
-
-export async function loadIndicatorPagesFromClickHouse(params: {
-  uid: string;
-  interval: number;
-  ind: IndicatorConfig;
-  from: Date;
-  to: Date;
-  seriesList: ISeriesApi<"Line" | "Histogram">[];
-  isStale: () => boolean;
-  applyEachPage?: boolean;
-  onPage: (points: IndicatorPoint[], valueMap: Map<number, Record<string, number>>) => void;
-}): Promise<{ points: IndicatorPoint[]; valueMap: Map<number, Record<string, number>> }> {
-  const accumulated: IndicatorPoint[] = [];
-  const valueMap = new Map<number, Record<string, number>>();
-  let after: Date | undefined;
-
-  while (true) {
-    if (params.isStale()) {
-      return { points: accumulated, valueMap };
-    }
-
-    const page = await listIndicatorValues({
-      uid: params.uid,
-      interval: params.interval,
-      from: params.from,
-      to: params.to,
-      type: params.ind.type,
-      indicatorParams: params.ind.params,
-      limit: INDICATOR_PAGE_SIZE,
-      after,
-    });
-
-    if (params.isStale()) {
-      return { points: accumulated, valueMap };
-    }
-
-    for (const pt of page.points) {
-      valueMap.set(pt.timeSec, pt.values);
-      accumulated.push(pt);
-    }
-
-    if (params.applyEachPage !== false) {
-      applyIndicatorPointsToSeries(params.ind, params.seriesList, accumulated);
-    }
-    params.onPage(accumulated, valueMap);
-
-    if (!page.hasMore || page.points.length === 0) break;
-
-    after = new Date(page.points[page.points.length - 1].timeSec * 1000);
-    await yieldFrame();
-  }
-
-  return { points: accumulated, valueMap };
-}
-
+/**
+ * Один RPC: сервер отдаёт значения, если они уже есть, иначе досчитывает
+ * недостающее и только потом отвечает.
+ */
 export async function computeIndicatorForDisplay(params: {
   uid: string;
   interval: number;
   ind: IndicatorConfig;
   from: Date;
   to: Date;
+  /** Прогрев только на первый запрос: у стыка с уже загруженным рядом lookback делает бэкенд. */
+  padWarmup?: boolean;
 }): Promise<IndicatorPoint[]> {
-  const range = padRangeForIndicator({ from: params.from, to: params.to }, params.interval, params.ind);
+  const needPad = params.padWarmup !== false && !params.ind.persist;
+  const range = needPad
+    ? padRangeForIndicator({ from: params.from, to: params.to }, params.interval, params.ind)
+    : { from: params.from, to: params.to };
   const res = await computeForInstrument({
     uid: params.uid,
     interval: params.interval,
@@ -232,8 +143,8 @@ export async function computeIndicatorForDisplay(params: {
     to: range.to,
     type: params.ind.type,
     indicatorParams: params.ind.params,
-    persist: false,
-    maxResponsePoints: 50_000,
+    persist: params.ind.persist,
+    maxResponsePoints: maxResponsePointsForRange(range.from, range.to, params.interval),
   });
   return res.points;
 }
