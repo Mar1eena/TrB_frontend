@@ -35,10 +35,11 @@ import {
   loadIndicatorPagesFromClickHouse,
   missingIndicatorRanges,
   persistIndicatorFullSeries,
+  pointsForBars,
   rangeFromBars,
   rangeFromBarsSec,
+  rangeFromDates,
   unionIndicatorRanges,
-  valueMapToPoints,
 } from "./indicatorLoad";
 import { CandleViewportStore, HISTORY_FROM_SEC } from "./viewportStore";
 import {
@@ -299,6 +300,7 @@ export default function CandlesPanel() {
   const indValuesMapRef = useRef<Map<string, Map<number, Record<string, number>>>>(new Map());
   const indicatorLoadGenRef = useRef<Map<string, number>>(new Map());
   const persistedKeysRef = useRef<Set<string>>(new Set());
+  const persistInFlightRef = useRef<Set<string>>(new Set());
   const latestBarsRef = useRef<CandleBar[]>([]);
   const prevIndicatorsRef = useRef<IndicatorConfig[]>([]);
   const syncedComputeSigRef = useRef<Map<string, string>>(new Map());
@@ -325,10 +327,10 @@ export default function CandlesPanel() {
   }, [indicators]);
 
   const resolveFullSeriesRange = useCallback(async (): Promise<{ from: Date; to: Date }> => {
-    const from = new Date(HISTORY_FROM_SEC * 1000);
+    let fromSec = downloadRef.current?.startSec ?? HISTORY_FROM_SEC;
     const cov = downloadRef.current;
     if (cov) {
-      return { from, to: new Date(Math.max(cov.endSec * 1000, Date.now())) };
+      return { from: new Date(fromSec * 1000), to: new Date(Math.max(cov.endSec * 1000, Date.now())) };
     }
 
     let row = downloadRowRef.current;
@@ -339,6 +341,13 @@ export default function CandlesPanel() {
         downloadRef.current = downloadCoverageFrom(row);
       }
     }
+
+    const coverage = downloadRef.current;
+    if (coverage) {
+      fromSec = coverage.startSec;
+    }
+
+    const from = new Date(fromSec * 1000);
 
     if (row?.last_end) {
       const to = new Date(row.last_end);
@@ -360,12 +369,18 @@ export default function CandlesPanel() {
     async (
       ind: IndicatorConfig,
       bars: CandleBar[],
-      options?: { showLoading?: boolean; forceGap?: boolean },
+      options?: { showLoading?: boolean; forceGap?: boolean; fullSeries?: boolean },
     ): Promise<void> => {
       if (!instrument || bars.length === 0) return;
 
-      const want = rangeFromBarsSec(bars);
-      if (!want) return;
+      const barsRange = rangeFromBarsSec(bars);
+      if (!barsRange) return;
+
+      let queryRange = barsRange;
+      if (options?.fullSeries) {
+        const full = await resolveFullSeriesRange();
+        queryRange = rangeFromDates(full.from, full.to);
+      }
 
       const seriesList = indSeriesMapRef.current.get(ind.id) ?? [];
       if (seriesList.length === 0) return;
@@ -373,12 +388,15 @@ export default function CandlesPanel() {
       const sig = indicatorComputeSig(ind);
       const loaded = indLoadedRangeRef.current.get(ind.id);
       const cacheValid = loaded?.sig === sig;
-      const gaps = cacheValid && !options?.forceGap ? missingIndicatorRanges(loaded, want) : [want];
+      const gaps =
+        cacheValid && !options?.forceGap
+          ? missingIndicatorRanges(loaded, queryRange)
+          : [queryRange];
 
       const applyCached = () => {
         const map = indValuesMapRef.current.get(ind.id);
         if (map && map.size > 0) {
-          applyIndicatorToSeries(ind, seriesList, valueMapToPoints(map));
+          applyIndicatorToSeries(ind, seriesList, pointsForBars(map, bars));
         }
       };
 
@@ -395,7 +413,6 @@ export default function CandlesPanel() {
       const merged = new Map(
         cacheValid ? (indValuesMapRef.current.get(ind.id) ?? new Map()) : [],
       );
-      const incremental = cacheValid && merged.size > 0;
 
       try {
         for (const gap of gaps) {
@@ -407,13 +424,14 @@ export default function CandlesPanel() {
             from: new Date(gap.fromSec * 1000),
             to: new Date(gap.toSec * 1000),
             seriesList,
-            applyEachPage: !incremental,
+            applyEachPage: false,
             isStale: () => isIndicatorLoadStale(ind.id, gen),
             onPage: (_points, pageMap) => {
               for (const [timeSec, values] of pageMap) {
                 merged.set(timeSec, values);
               }
               indValuesMapRef.current.set(ind.id, merged);
+              applyIndicatorToSeries(ind, seriesList, pointsForBars(merged, bars));
             },
           });
           if (isIndicatorLoadStale(ind.id, gen)) return;
@@ -425,11 +443,11 @@ export default function CandlesPanel() {
         if (isIndicatorLoadStale(ind.id, gen)) return;
 
         indValuesMapRef.current.set(ind.id, merged);
-        if (incremental || merged.size > 0) {
-          applyIndicatorToSeries(ind, seriesList, valueMapToPoints(merged));
+        if (merged.size > 0) {
+          applyIndicatorToSeries(ind, seriesList, pointsForBars(merged, bars));
         }
 
-        if (merged.size === 0 && !incremental && !ind.persist) {
+        if (merged.size === 0 && !ind.persist) {
           const displayRange = rangeFromBars(bars);
           if (!displayRange) return;
           const fallback = await computeIndicatorForDisplay({
@@ -446,11 +464,11 @@ export default function CandlesPanel() {
           );
         }
 
-        let nextRange = cacheValid && loaded ? loaded : want;
+        let nextRange = cacheValid && loaded ? loaded : queryRange;
         for (const gap of gaps) {
           nextRange = unionIndicatorRanges(nextRange, gap);
         }
-        nextRange = unionIndicatorRanges(nextRange, want);
+        nextRange = unionIndicatorRanges(nextRange, queryRange);
         indLoadedRangeRef.current.set(ind.id, { ...nextRange, sig });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -466,7 +484,7 @@ export default function CandlesPanel() {
         }
       }
     },
-    [instrument, interval],
+    [instrument, interval, resolveFullSeriesRange],
   );
 
   const ensureIndicatorPersisted = useCallback(
@@ -474,17 +492,22 @@ export default function CandlesPanel() {
       if (!instrument || !ind.persist) return;
 
       const key = `${instrument.uid}:${interval}:${ind.id}:${targetSec ?? "all"}:${JSON.stringify(ind.params)}`;
-      if (persistedKeysRef.current.has(key)) return;
+      if (persistedKeysRef.current.has(key) || persistInFlightRef.current.has(key)) return;
 
-      const fullRange = await resolveFullSeriesRange();
-      await persistIndicatorFullSeries({
-        uid: instrument.uid,
-        interval,
-        ind,
-        from: fullRange.from,
-        to: fullRange.to,
-      });
-      persistedKeysRef.current.add(key);
+      persistInFlightRef.current.add(key);
+      try {
+        const fullRange = await resolveFullSeriesRange();
+        await persistIndicatorFullSeries({
+          uid: instrument.uid,
+          interval,
+          ind,
+          from: fullRange.from,
+          to: fullRange.to,
+        });
+        persistedKeysRef.current.add(key);
+      } finally {
+        persistInFlightRef.current.delete(key);
+      }
     },
     [instrument, interval, resolveFullSeriesRange],
   );
@@ -538,12 +561,24 @@ export default function CandlesPanel() {
 
         try {
           if (ind.persist) {
-            // 1. Сначала подгружаем существующие индикаторы из ClickHouse и сразу отображаем на графике
+            const persistKey = `${instrument.uid}:${interval}:${ind.id}:all:${JSON.stringify(ind.params)}`;
+            const needsFullPersist =
+              options?.persist !== false && !persistedKeysRef.current.has(persistKey);
+
+            const sig = indicatorComputeSig(ind);
+            const loadedMeta = indLoadedRangeRef.current.get(ind.id);
+            const fullSeriesDates = await resolveFullSeriesRange();
+            const fullRange = rangeFromDates(fullSeriesDates.from, fullSeriesDates.to);
+            const fullSeriesLoaded =
+              loadedMeta?.sig === sig &&
+              loadedMeta.fromSec <= fullRange.fromSec + 3600 &&
+              loadedMeta.toSec >= fullRange.toSec - 3600;
+
             await loadIndicatorFromClickHouse(ind, bars, {
               showLoading: options?.showLoading,
+              fullSeries: !fullSeriesLoaded,
             });
 
-            // 2. Проверяем наличие расхождений (нет данных в ClickHouse или последний бар свечей новее последнего индикатора)
             const map = indValuesMapRef.current.get(ind.id);
             const lastBar = bars[bars.length - 1];
             const lastBarSec = lastBar ? (lastBar.time as number) : 0;
@@ -554,20 +589,51 @@ export default function CandlesPanel() {
               }
             }
 
-            const hasDiscrepancy = !map || map.size === 0 || (lastBarSec > 0 && maxLoadedSec < lastBarSec);
+            const hasTailGap = lastBarSec > 0 && maxLoadedSec < lastBarSec;
 
-            // 3. Если есть расхождения — подгружаем на сервере и дополняем график
-            if (hasDiscrepancy && options?.persist !== false) {
-              try {
-                await ensureIndicatorPersisted(ind, lastBarSec);
-                // Догружаем недостающие точки из ClickHouse и дополняем график
-                await loadIndicatorFromClickHouse(ind, bars, {
-                  showLoading: false,
-                  forceGap: true,
-                });
-              } catch (persistErr) {
-                console.warn("Indicator persist/complement error:", ind.name, persistErr);
+            // Быстрый preview по видимому окну, пока идёт persist/полная загрузка.
+            if ((!map || map.size === 0) && bars.length > 0) {
+              const displayRange = rangeFromBars(bars);
+              if (displayRange) {
+                const gen = bumpIndicatorLoadGen(ind.id);
+                try {
+                  const fallback = await computeIndicatorForDisplay({
+                    uid: instrument.uid,
+                    interval,
+                    ind,
+                    from: displayRange.from,
+                    to: displayRange.to,
+                  });
+                  if (!isIndicatorLoadStale(ind.id, gen)) {
+                    indValuesMapRef.current.set(
+                      ind.id,
+                      applyIndicatorToSeries(ind, seriesList, fallback),
+                    );
+                  }
+                } catch (displayErr) {
+                  console.warn("Indicator display fallback error:", ind.name, displayErr);
+                }
               }
+            }
+
+            setLoadingIndicators((prev) => {
+              const next = new Set(prev);
+              next.delete(ind.id);
+              return next;
+            });
+
+            if (needsFullPersist || hasTailGap) {
+              void ensureIndicatorPersisted(ind, lastBarSec)
+                .then(() =>
+                  loadIndicatorFromClickHouse(ind, bars, {
+                    showLoading: false,
+                    forceGap: true,
+                    fullSeries: true,
+                  }),
+                )
+                .catch((persistErr) => {
+                  console.warn("Indicator persist/complement error:", ind.name, persistErr);
+                });
             }
           } else {
             const want = rangeFromBarsSec(bars);
@@ -581,7 +647,7 @@ export default function CandlesPanel() {
             ) {
               const map = indValuesMapRef.current.get(ind.id);
               if (map && map.size > 0) {
-                applyIndicatorToSeries(ind, seriesList, valueMapToPoints(map));
+                applyIndicatorToSeries(ind, seriesList, pointsForBars(map, bars));
               }
               continue;
             }
@@ -628,7 +694,7 @@ export default function CandlesPanel() {
 
       updateHudFromLastBar();
     },
-    [indicators, instrument, interval, ensureIndicatorPersisted, loadIndicatorFromClickHouse],
+    [indicators, instrument, interval, ensureIndicatorPersisted, loadIndicatorFromClickHouse, resolveFullSeriesRange],
   );
 
   const syncIndicatorsRef = useRef(syncIndicators);
@@ -929,6 +995,7 @@ export default function CandlesPanel() {
     setLoadingIndicators(new Set());
     indicatorLoadGenRef.current.clear();
     persistedKeysRef.current.clear();
+    persistInFlightRef.current.clear();
     indLoadedRangeRef.current.clear();
     setError("");
     candles.setData([]);

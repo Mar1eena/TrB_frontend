@@ -6,7 +6,7 @@ import type {
 } from "lightweight-charts";
 import type { IndicatorConfig, IndicatorPoint } from "../../api/indicators";
 
-export const INDICATOR_PAGE_SIZE = 4000;
+export const INDICATOR_PAGE_SIZE = 50_000;
 
 export function yieldFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));

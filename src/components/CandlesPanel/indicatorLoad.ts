@@ -43,6 +43,28 @@ export function rangeFromBarsSec(bars: CandleBar[]): IndicatorTimeRange | null {
   };
 }
 
+export function rangeFromDates(from: Date, to: Date): IndicatorTimeRange {
+  return {
+    fromSec: Math.floor(from.getTime() / 1000),
+    toSec: Math.floor(to.getTime() / 1000),
+  };
+}
+
+/** Точки индикатора только для свечей, уже загруженных на график. */
+export function pointsForBars(
+  valueMap: Map<number, Record<string, number>>,
+  bars: CandleBar[],
+): IndicatorPoint[] {
+  if (valueMap.size === 0 || bars.length === 0) return [];
+  const points: IndicatorPoint[] = [];
+  for (const bar of bars) {
+    const timeSec = bar.time as number;
+    const values = valueMap.get(timeSec);
+    if (values) points.push({ timeSec, time: "", values });
+  }
+  return points;
+}
+
 export function indicatorComputeSig(ind: IndicatorConfig): string {
   return `${ind.type}:${ind.persist}:${JSON.stringify(ind.params)}`;
 }
