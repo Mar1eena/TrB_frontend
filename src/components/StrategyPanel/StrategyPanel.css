@@ -134,13 +134,57 @@
 
 .strategy-row-actions {
   display: flex;
-  gap: 0.35rem;
+  gap: 0.4rem;
   white-space: nowrap;
+  justify-content: flex-end;
 }
 
-.strategy-row-actions .btn {
-  padding: 0.35rem 0.6rem;
-  font-size: 0.82rem;
+.strategy-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+
+.strategy-action svg {
+  flex: none;
+  opacity: 0.85;
+}
+
+.strategy-action:hover {
+  color: var(--text);
+}
+
+.strategy-action.edit:hover {
+  color: #8fc7e8;
+  border-color: rgba(143, 199, 232, 0.5);
+  background: rgba(143, 199, 232, 0.12);
+}
+
+.strategy-action.run:hover {
+  color: var(--accent);
+  border-color: rgba(61, 186, 122, 0.5);
+  background: var(--accent-dim);
+}
+
+.strategy-action.archive:hover {
+  color: #e8b4b4;
+  border-color: rgba(220, 120, 120, 0.5);
+  background: rgba(220, 120, 120, 0.12);
+}
+
+.strategy-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .trade-win td:nth-child(10),
@@ -233,6 +277,47 @@
 
 .strategy-modal.wide {
   width: min(72rem, 100%);
+}
+
+/* --- редактор стратегии: липкие шапка и подвал, скролл в теле --- */
+
+.strategy-modal.strategy-editor {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.strategy-editor .strategy-modal-head {
+  padding: 1rem 1.4rem;
+  border-bottom: 1px solid var(--line);
+  background: #161221;
+}
+
+.strategy-editor-sub {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+}
+
+.strategy-editor-body {
+  overflow: auto;
+  padding: 1.1rem 1.4rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.strategy-editor .strategy-modal-actions {
+  padding: 0.85rem 1.4rem;
+  border-top: 1px solid var(--line);
+  background: #161221;
+  align-items: center;
+}
+
+.strategy-editor-status {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .strategy-modal-head {
@@ -373,8 +458,66 @@
   font-variant-numeric: tabular-nums;
 }
 
+.strategy-charts {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.strategy-chart-switch {
+  display: flex;
+  gap: 0.35rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.strategy-chart-switch .strategy-tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.strategy-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.strategy-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.strategy-chart-legend .dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.strategy-chart-legend .dot.buy {
+  background: #3dba7a;
+}
+
+.strategy-chart-legend .dot.win {
+  background: #7fd6a3;
+}
+
+.strategy-chart-legend .dot.loss {
+  background: #e0637d;
+}
+
+.strategy-price-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #8fc7e8;
+  font-size: 0.85rem;
+  padding: 1.5rem 0;
+}
+
 .strategy-chart-wrap {
-  height: 18rem;
+  height: 20rem;
   border: 1px solid var(--line);
   border-radius: 0.6rem;
   overflow: hidden;

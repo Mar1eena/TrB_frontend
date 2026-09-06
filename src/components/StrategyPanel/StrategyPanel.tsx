@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNotify } from "../../notifications";
 import { CANDLE_INTERVALS, fetchInstruments } from "../../api/scheduler";
 import * as api from "../../api/strategy";
@@ -9,6 +9,7 @@ import {
   type SpecTemplate,
 } from "./templates";
 import EquityChart from "./EquityChart";
+import PriceChart from "./PriceChart";
 import SpecBuilder from "./SpecBuilder";
 import { normalizeSpec, pruneSpec } from "./specModel";
 import "../SchedulerPanel/SchedulerPanel.css";
@@ -57,6 +58,24 @@ function toLocalInput(iso: string): string {
   if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function ActionIcon({ name }: { name: "edit" | "run" | "archive" }) {
+  const paths: Record<string, ReactNode> = {
+    edit: <path d="M4 13.5V16h2.5l7.4-7.4-2.5-2.5L4 13.5zM15.7 6.3a.7.7 0 0 0 0-1L14.7 4.3a.7.7 0 0 0-1 0l-1 1 2.5 2.5 1-1.5z" />,
+    run: <path d="M6 4l9 6-9 6V4z" />,
+    archive: (
+      <>
+        <path d="M3 5h14v3H3z" />
+        <path d="M4 9h12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9zm4 2v2h4v-2H8z" />
+      </>
+    ),
+  };
+  return (
+    <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor" aria-hidden="true">
+      {paths[name]}
+    </svg>
+  );
 }
 
 export default function StrategyPanel() {
@@ -246,14 +265,32 @@ function StrategiesTab({
                   <td className="mono">{inds || "—"}</td>
                   <td className="table-datetime">{api.fmtDateTime(s.updatedAt)}</td>
                   <td className="strategy-row-actions">
-                    <button type="button" className="btn ghost" onClick={() => setEditor({ mode: "edit", strategy: s })}>
+                    <button
+                      type="button"
+                      className="strategy-action edit"
+                      title="Открыть редактор стратегии"
+                      onClick={() => setEditor({ mode: "edit", strategy: s })}
+                    >
+                      <ActionIcon name="edit" />
                       Изменить
                     </button>
-                    <button type="button" className="btn ghost" onClick={() => onRunBacktest(s.id)}>
+                    <button
+                      type="button"
+                      className="strategy-action run"
+                      title="Запустить бэктест по этой стратегии"
+                      onClick={() => onRunBacktest(s.id)}
+                    >
+                      <ActionIcon name="run" />
                       Бэктест
                     </button>
                     {!s.archived ? (
-                      <button type="button" className="btn danger" onClick={() => void archive(s)}>
+                      <button
+                        type="button"
+                        className="strategy-action archive"
+                        title="Переместить стратегию в архив"
+                        onClick={() => void archive(s)}
+                      >
+                        <ActionIcon name="archive" />
                         В архив
                       </button>
                     ) : null}
@@ -382,97 +419,129 @@ function SpecEditorModal({
     }
   };
 
+  const chooseTemplate = (id: string) => {
+    const tpl = SPEC_TEMPLATES.find((t) => t.id === id);
+    if (!tpl) return;
+    if (initial && !window.confirm(`Заменить текущую конфигурацию шаблоном «${tpl.label}»? Несохранённые изменения пропадут.`)) {
+      return;
+    }
+    applyTemplate(tpl);
+  };
+
+  const indicatorCount = Array.isArray(spec.indicators) ? spec.indicators.length : 0;
+
   return (
-    <div className="strategy-modal-overlay" onClick={onClose}>
-      <div className="strategy-modal wide" onClick={(e) => e.stopPropagation()}>
+    <div className="strategy-modal-overlay" onClick={() => (busy ? null : onClose())}>
+      <div className="strategy-modal wide strategy-editor" onClick={(e) => e.stopPropagation()}>
         <header className="strategy-modal-head">
-          <h2>{initial ? "Изменить стратегию" : "Новая стратегия"}</h2>
+          <div>
+            <h2>{initial ? "Редактор стратегии" : "Новая стратегия"}</h2>
+            <p className="strategy-editor-sub">
+              {mode === "builder" ? "Конструктор" : "Ручной JSON"} · индикаторов: {indicatorCount}
+              {issues ? (issues.length === 0 ? " · проверена" : ` · ошибок: ${issues.length}`) : ""}
+            </p>
+          </div>
           <button type="button" className="strategy-modal-close" onClick={onClose}>
             ×
           </button>
         </header>
 
-        <div className="strategy-form-grid">
-          <label className="filter-field">
-            <span>Название</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="RSI mean-reversion SBER" />
-          </label>
-          <label className="filter-field">
-            <span>Описание</span>
-            <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Кратко" />
-          </label>
-          <label className="filter-field">
-            <span>Шаблон</span>
-            <select
-              value={templateId}
-              onChange={(e) => {
-                const tpl = SPEC_TEMPLATES.find((t) => t.id === e.target.value);
-                if (tpl) applyTemplate(tpl);
-              }}
+        <div className="strategy-editor-body">
+          <div className="strategy-form-grid">
+            <label className="filter-field">
+              <span>Название</span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="RSI mean-reversion SBER"
+                autoFocus={!initial}
+              />
+            </label>
+            <label className="filter-field">
+              <span>Описание</span>
+              <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Кратко" />
+            </label>
+            <label className="filter-field">
+              <span>{initial ? "Заменить шаблоном" : "Шаблон"}</span>
+              <select
+                value={initial ? "" : templateId}
+                onChange={(e) => chooseTemplate(e.target.value)}
+              >
+                {initial ? <option value="">— выберите —</option> : null}
+                {SPEC_TEMPLATES.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="strategy-mode-switch">
+            <button
+              type="button"
+              className={`strategy-tab ${mode === "builder" ? "is-active" : ""}`}
+              onClick={() => switchMode("builder")}
             >
-              {SPEC_TEMPLATES.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+              Конструктор
+            </button>
+            <button
+              type="button"
+              className={`strategy-tab ${mode === "json" ? "is-active" : ""}`}
+              onClick={() => switchMode("json")}
+            >
+              JSON
+            </button>
+          </div>
 
-        <div className="strategy-mode-switch">
-          <button
-            type="button"
-            className={`strategy-tab ${mode === "builder" ? "is-active" : ""}`}
-            onClick={() => switchMode("builder")}
-          >
-            Конструктор
-          </button>
-          <button
-            type="button"
-            className={`strategy-tab ${mode === "json" ? "is-active" : ""}`}
-            onClick={() => switchMode("json")}
-          >
-            JSON
-          </button>
-        </div>
-
-        {mode === "builder" ? (
-          <SpecBuilder value={spec} onChange={setSpec} issues={issues} />
-        ) : (
-          <label className="filter-field strategy-json-field">
-            <span>StrategySpec (JSON)</span>
-            <textarea
-              spellCheck={false}
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value);
-                setIssues(null);
-              }}
-              rows={22}
-            />
-          </label>
-        )}
-
-        {issues ? (
-          issues.length === 0 ? (
-            <p className="strategy-ok">✔ Ошибок не найдено</p>
+          {mode === "builder" ? (
+            <SpecBuilder value={spec} onChange={setSpec} issues={issues} />
           ) : (
-            <ul className="strategy-issues">
-              {issues.map((is, i) => (
-                <li key={i}>
-                  <code>{is.path}</code> — {is.message}
-                </li>
-              ))}
-            </ul>
-          )
-        ) : null}
+            <label className="filter-field strategy-json-field">
+              <span>StrategySpec (JSON)</span>
+              <textarea
+                spellCheck={false}
+                value={text}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  setIssues(null);
+                }}
+                rows={22}
+              />
+            </label>
+          )}
+
+          {issues ? (
+            issues.length === 0 ? (
+              <p className="strategy-ok">✔ Ошибок не найдено</p>
+            ) : (
+              <ul className="strategy-issues">
+                {issues.map((is, i) => (
+                  <li key={i}>
+                    <code>{is.path}</code> — {is.message}
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : null}
+        </div>
 
         <footer className="strategy-modal-actions">
+          <span className="strategy-editor-status">
+            {issues == null
+              ? "Не проверена"
+              : issues.length === 0
+                ? "✔ Стратегия валидна"
+                : `${issues.length} ошибок в конфигурации`}
+          </span>
+          <button type="button" className="btn ghost" onClick={onClose} disabled={busy}>
+            Отмена
+          </button>
           <button type="button" className="btn ghost" onClick={() => void validate()} disabled={busy}>
             Проверить
           </button>
           <button type="button" className="btn primary" onClick={() => void save()} disabled={busy}>
-            {initial ? "Сохранить" : "Создать"}
+            {busy ? "Сохранение…" : initial ? "Сохранить" : "Создать"}
           </button>
         </footer>
       </div>
@@ -768,6 +837,7 @@ function BacktestResultModal({
   const notify = useNotify();
   const [data, setData] = useState<Awaited<ReturnType<typeof api.getBacktestResult>> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [chartTab, setChartTab] = useState<"equity" | "price">("price");
   const pollRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -881,9 +951,35 @@ function BacktestResultModal({
           </div>
         ) : null}
 
-        {data?.equity && data.equity.length > 1 ? (
-          <div className="strategy-chart-wrap">
-            <EquityChart points={data.equity} trades={trades} />
+        {run?.config && (run.status === "RUN_SUCCEEDED" || (data?.equity?.length ?? 0) > 1) ? (
+          <div className="strategy-charts">
+            <div className="strategy-chart-switch">
+              <button
+                type="button"
+                className={`strategy-tab ${chartTab === "price" ? "is-active" : ""}`}
+                onClick={() => setChartTab("price")}
+              >
+                Цена и сделки
+              </button>
+              <button
+                type="button"
+                className={`strategy-tab ${chartTab === "equity" ? "is-active" : ""}`}
+                onClick={() => setChartTab("equity")}
+                disabled={!data?.equity || data.equity.length < 2}
+              >
+                Кривая капитала
+              </button>
+            </div>
+
+            {chartTab === "price" && run.config ? (
+              <PriceChart config={run.config} trades={trades} />
+            ) : null}
+
+            {chartTab === "equity" && data?.equity && data.equity.length > 1 ? (
+              <div className="strategy-chart-wrap">
+                <EquityChart points={data.equity} trades={trades} />
+              </div>
+            ) : null}
           </div>
         ) : null}
 
