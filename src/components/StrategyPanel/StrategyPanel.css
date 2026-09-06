@@ -143,14 +143,25 @@
   font-size: 0.82rem;
 }
 
-.trade-win td:nth-child(7),
-.trade-win td:nth-child(8) {
+.trade-win td:nth-child(10),
+.trade-win td:nth-child(11) {
   color: #7fd6a3;
 }
 
-.trade-loss td:nth-child(7),
-.trade-loss td:nth-child(8) {
+.trade-loss td:nth-child(10),
+.trade-loss td:nth-child(11) {
   color: #e88c8c;
+}
+
+.strategy-metric-info {
+  margin-left: 0.3rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  cursor: help;
+}
+
+.strategy-metric {
+  cursor: help;
 }
 
 /* --- чипы статусов --- */

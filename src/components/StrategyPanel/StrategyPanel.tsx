@@ -88,7 +88,7 @@ export default function StrategyPanel() {
 
   const loadStrategies = useCallback(async () => {
     try {
-      const res = await api.listStrategies({ limit: 500 });
+      const res = await api.listStrategies({ limit: 500, includeArchived: true });
       setStrategies(res.items ?? []);
     } catch (err) {
       notify.error(err instanceof Error ? err.message : "Не удалось загрузить стратегии");
@@ -450,6 +450,7 @@ function BacktestsTab({
   const [cash, setCash] = useState(100000);
   const [commission, setCommission] = useState(0.0005);
   const [longOnly, setLongOnly] = useState(true);
+  const [force, setForce] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const [runs, setRuns] = useState<api.BacktestRunListItem[]>([]);
@@ -502,6 +503,7 @@ function BacktestsTab({
     try {
       const res = await api.submitBacktest({
         strategyId,
+        force,
         config: {
           uid,
           interval,
@@ -590,6 +592,10 @@ function BacktestsTab({
             <input type="checkbox" checked={longOnly} onChange={(e) => setLongOnly(e.target.checked)} />
             только long
           </label>
+          <label className="strategy-inline-check" title="Игнорировать дедуп и посчитать заново (например после обновления движка)">
+            <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
+            принудительно
+          </label>
         </div>
         <div className="filters-row filters-actions">
           <button type="button" className="btn primary" onClick={() => void submit()} disabled={submitting}>
@@ -609,11 +615,11 @@ function BacktestsTab({
               <th>Инструмент</th>
               <th>Период</th>
               <th>Статус</th>
-              <th className="num">Доходность</th>
-              <th className="num">CAGR</th>
-              <th className="num">Sharpe</th>
-              <th className="num">Просадка</th>
-              <th className="num">Сделок</th>
+              <th className="num" title={METRIC_HELP.totalReturn}>Доходность</th>
+              <th className="num" title={METRIC_HELP.cagr}>CAGR</th>
+              <th className="num" title={METRIC_HELP.sharpe}>Sharpe</th>
+              <th className="num" title={METRIC_HELP.maxDrawdown}>Просадка</th>
+              <th className="num" title={METRIC_HELP.tradesCount}>Сделок</th>
               <th />
             </tr>
           </thead>
@@ -664,6 +670,24 @@ function BacktestsTab({
     </>
   );
 }
+
+const METRIC_HELP: Record<string, string> = {
+  totalReturn: "Суммарная доходность за весь период теста: (капитал в конце ÷ начальный капитал) − 1.",
+  cagr: "CAGR — среднегодовой темп роста капитала с учётом сложного процента (приведённая к году доходность).",
+  sharpe:
+    "Sharpe — доходность на единицу общего риска: среднедневная доходность ÷ её стандартное отклонение, годовая. >1 хорошо, >2 отлично.",
+  sortino:
+    "Sortino — как Sharpe, но в знаменателе только волатильность убытков (downside). Не штрафует за рост.",
+  maxDrawdown: "Максимальная просадка — самое глубокое падение капитала от предыдущего пика за период.",
+  winRate: "Доля прибыльных сделок от их общего числа.",
+  profitFactor: "Profit factor — сумма прибыли всех выигрышных сделок ÷ сумма убытка проигрышных. >1 — стратегия в плюсе.",
+  sqn: "SQN (System Quality Number, Van Tharp) — качество системы: √N · среднее сделки ÷ σ сделок. 2–3 — хорошо, >3 — отлично.",
+  exposure: "Доля времени (баров), когда в позиции была открыта хотя бы одна сделка.",
+  avgTradePct: "Средняя доходность одной сделки в долях от начального капитала.",
+  expectancy: "Математическое ожидание одной сделки в валюте счёта (средний P/L на сделку).",
+  finalEquity: "Стоимость счёта в конце периода теста.",
+  tradesCount: "Число закрытых сделок за период.",
+};
 
 const METRIC_ROWS: { key: keyof api.BacktestMetrics; label: string; kind: "pct" | "num" }[] = [
   { key: "totalReturn", label: "Доходность", kind: "pct" },
@@ -782,17 +806,24 @@ function BacktestResultModal({
           <div className="strategy-metrics-grid">
             {METRIC_ROWS.map((m) => {
               const v = metrics[m.key] as number | undefined;
+              const help = METRIC_HELP[String(m.key)];
               return (
-                <div key={String(m.key)} className="strategy-metric">
-                  <span className="strategy-metric-label">{m.label}</span>
+                <div key={String(m.key)} className="strategy-metric" title={help}>
+                  <span className="strategy-metric-label">
+                    {m.label}
+                    {help ? <span className="strategy-metric-info">ⓘ</span> : null}
+                  </span>
                   <span className="strategy-metric-value">
                     {m.kind === "pct" ? api.pct(v) : api.num(v)}
                   </span>
                 </div>
               );
             })}
-            <div className="strategy-metric">
-              <span className="strategy-metric-label">Сделок</span>
+            <div className="strategy-metric" title={METRIC_HELP.tradesCount}>
+              <span className="strategy-metric-label">
+                Сделок
+                <span className="strategy-metric-info">ⓘ</span>
+              </span>
               <span className="strategy-metric-value">{metrics.tradesCount}</span>
             </div>
           </div>
@@ -800,7 +831,7 @@ function BacktestResultModal({
 
         {data?.equity && data.equity.length > 1 ? (
           <div className="strategy-chart-wrap">
-            <EquityChart points={data.equity} />
+            <EquityChart points={data.equity} trades={trades} />
           </div>
         ) : null}
 
@@ -815,27 +846,43 @@ function BacktestResultModal({
                     <th>Напр.</th>
                     <th>Вход</th>
                     <th className="num">Цена</th>
+                    <th className="num" title="Цена входа × размер позиции">Сумма входа</th>
                     <th>Выход</th>
                     <th className="num">Цена</th>
+                    <th className="num" title="Цена выхода × размер позиции">Сумма выхода</th>
+                    <th className="num">Размер</th>
                     <th className="num">P/L</th>
-                    <th className="num">P/L %</th>
+                    <th className="num" title="Доходность сделки: P/L ÷ сумма входа">P/L %</th>
                     <th className="num">Баров</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {trades.map((t) => (
-                    <tr key={t.tradeId} className={t.pnl >= 0 ? "trade-win" : "trade-loss"}>
-                      <td>{t.tradeId}</td>
-                      <td>{t.isLong ? "long" : "short"}</td>
-                      <td className="table-datetime">{api.fmtDateTime(t.entryTime)}</td>
-                      <td className="num">{api.num(t.entryPrice, 4)}</td>
-                      <td className="table-datetime">{api.fmtDateTime(t.exitTime)}</td>
-                      <td className="num">{api.num(t.exitPrice, 4)}</td>
-                      <td className="num">{api.num(t.pnl)}</td>
-                      <td className="num">{api.pct(t.pnlPct)}</td>
-                      <td className="num">{t.barsHeld}</td>
-                    </tr>
-                  ))}
+                  {trades.map((t) => {
+                    const entryValue = t.entryPrice * t.size;
+                    const exitValue = t.exitPrice * t.size;
+                    const plPct =
+                      Number.isFinite(t.pnlPct) && Math.abs(t.pnlPct) <= 20
+                        ? t.pnlPct
+                        : entryValue
+                          ? t.pnl / Math.abs(entryValue)
+                          : NaN;
+                    return (
+                      <tr key={t.tradeId} className={t.pnl >= 0 ? "trade-win" : "trade-loss"}>
+                        <td>{t.tradeId}</td>
+                        <td>{t.isLong ? "long" : "short"}</td>
+                        <td className="table-datetime">{api.fmtDateTime(t.entryTime)}</td>
+                        <td className="num">{api.num(t.entryPrice, 4)}</td>
+                        <td className="num">{api.num(entryValue)}</td>
+                        <td className="table-datetime">{api.fmtDateTime(t.exitTime)}</td>
+                        <td className="num">{api.num(t.exitPrice, 4)}</td>
+                        <td className="num">{api.num(exitValue)}</td>
+                        <td className="num">{api.num(t.size, 0)}</td>
+                        <td className="num">{api.num(t.pnl)}</td>
+                        <td className="num">{api.pct(plPct)}</td>
+                        <td className="num">{t.barsHeld}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
