@@ -9,6 +9,8 @@ import {
   type SpecTemplate,
 } from "./templates";
 import EquityChart from "./EquityChart";
+import SpecBuilder from "./SpecBuilder";
+import { normalizeSpec, pruneSpec } from "./specModel";
 import "../SchedulerPanel/SchedulerPanel.css";
 import "../../styles/tables.css";
 import "./StrategyPanel.css";
@@ -290,33 +292,64 @@ function SpecEditorModal({
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [templateId, setTemplateId] = useState<string>(SPEC_TEMPLATES[0].id);
+  const [mode, setMode] = useState<"builder" | "json">("builder");
+  const [spec, setSpec] = useState<api.StrategySpec>(() =>
+    normalizeSpec(initial?.spec ?? SPEC_TEMPLATES[0].spec),
+  );
   const [text, setText] = useState(() =>
-    JSON.stringify(initial?.spec ?? SPEC_TEMPLATES[0].spec, null, 2),
+    JSON.stringify(pruneSpec(normalizeSpec(initial?.spec ?? SPEC_TEMPLATES[0].spec)), null, 2),
   );
   const [issues, setIssues] = useState<api.ValidationIssue[] | null>(null);
   const [busy, setBusy] = useState(false);
 
   const applyTemplate = (tpl: SpecTemplate) => {
     setTemplateId(tpl.id);
-    setText(JSON.stringify(tpl.spec, null, 2));
+    const next = normalizeSpec(tpl.spec);
+    setSpec(next);
+    setText(JSON.stringify(pruneSpec(next), null, 2));
     setIssues(null);
   };
 
-  const parse = (): api.StrategySpec | null => {
+  // JSON -> spec; false => текст не распарсился, остаёмся в JSON-режиме
+  const syncFromText = (): boolean => {
     try {
-      return JSON.parse(text) as api.StrategySpec;
+      setSpec(normalizeSpec(JSON.parse(text)));
+      return true;
     } catch (err) {
       notify.error(`Некорректный JSON: ${err instanceof Error ? err.message : ""}`);
-      return null;
+      return false;
     }
   };
 
+  const switchMode = (next: "builder" | "json") => {
+    if (next === mode) return;
+    if (next === "json") {
+      setText(JSON.stringify(pruneSpec(spec), null, 2));
+      setMode("json");
+    } else if (syncFromText()) {
+      setMode("builder");
+    }
+  };
+
+  // актуальный spec с учётом активного режима
+  const currentSpec = (): api.StrategySpec | null => {
+    if (mode === "json") {
+      try {
+        return pruneSpec(normalizeSpec(JSON.parse(text)));
+      } catch (err) {
+        notify.error(`Некорректный JSON: ${err instanceof Error ? err.message : ""}`);
+        return null;
+      }
+    }
+    return pruneSpec(spec);
+  };
+
   const validate = async () => {
-    const spec = parse();
-    if (!spec) return;
+    const s = currentSpec();
+    if (!s) return;
     setBusy(true);
     try {
-      const res = await api.validateStrategy(spec);
+      const res = await api.validateStrategy(s);
       setIssues(res.issues ?? []);
       if (res.ok) notify.success("Стратегия валидна");
     } catch (err) {
@@ -327,8 +360,8 @@ function SpecEditorModal({
   };
 
   const save = async () => {
-    const spec = parse();
-    if (!spec) return;
+    const s = currentSpec();
+    if (!s) return;
     if (!name.trim()) {
       notify.error("Укажите название");
       return;
@@ -336,9 +369,9 @@ function SpecEditorModal({
     setBusy(true);
     try {
       if (initial) {
-        await api.updateStrategy(initial.id, { name: name.trim(), description, spec });
+        await api.updateStrategy(initial.id, { name: name.trim(), description, spec: s });
       } else {
-        await api.createStrategy({ name: name.trim(), description, spec });
+        await api.createStrategy({ name: name.trim(), description, spec: s });
       }
       notify.success(initial ? "Стратегия обновлена" : "Стратегия создана");
       onSaved();
@@ -368,38 +401,57 @@ function SpecEditorModal({
             <span>Описание</span>
             <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Кратко" />
           </label>
-          {!initial ? (
-            <label className="filter-field">
-              <span>Шаблон</span>
-              <select
-                value={templateId}
-                onChange={(e) => {
-                  const tpl = SPEC_TEMPLATES.find((t) => t.id === e.target.value);
-                  if (tpl) applyTemplate(tpl);
-                }}
-              >
-                {SPEC_TEMPLATES.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
+          <label className="filter-field">
+            <span>Шаблон</span>
+            <select
+              value={templateId}
+              onChange={(e) => {
+                const tpl = SPEC_TEMPLATES.find((t) => t.id === e.target.value);
+                if (tpl) applyTemplate(tpl);
+              }}
+            >
+              {SPEC_TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
-        <label className="filter-field strategy-json-field">
-          <span>StrategySpec (JSON)</span>
-          <textarea
-            spellCheck={false}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              setIssues(null);
-            }}
-            rows={20}
-          />
-        </label>
+        <div className="strategy-mode-switch">
+          <button
+            type="button"
+            className={`strategy-tab ${mode === "builder" ? "is-active" : ""}`}
+            onClick={() => switchMode("builder")}
+          >
+            Конструктор
+          </button>
+          <button
+            type="button"
+            className={`strategy-tab ${mode === "json" ? "is-active" : ""}`}
+            onClick={() => switchMode("json")}
+          >
+            JSON
+          </button>
+        </div>
+
+        {mode === "builder" ? (
+          <SpecBuilder value={spec} onChange={setSpec} issues={issues} />
+        ) : (
+          <label className="filter-field strategy-json-field">
+            <span>StrategySpec (JSON)</span>
+            <textarea
+              spellCheck={false}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                setIssues(null);
+              }}
+              rows={22}
+            />
+          </label>
+        )}
 
         {issues ? (
           issues.length === 0 ? (

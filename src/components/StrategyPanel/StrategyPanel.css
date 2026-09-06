@@ -405,3 +405,272 @@
 .strategy-space-row .strategy-json-field {
   flex: 1 1 20rem;
 }
+
+/* --- конструктор стратегии --- */
+
+.strategy-mode-switch {
+  display: flex;
+  gap: 0.35rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.spec-builder {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.spec-section {
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  padding: 0.7rem 0.85rem;
+  background: rgba(28, 23, 48, 0.4);
+  display: grid;
+  gap: 0.55rem;
+}
+
+.spec-section h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.spec-count {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.spec-section-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+
+.spec-inline-controls {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.spec-short-toggle {
+  padding-left: 0.2rem;
+}
+
+.spec-indicator {
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  padding: 0.6rem;
+  display: grid;
+  gap: 0.5rem;
+  background: rgba(10, 8, 18, 0.35);
+}
+
+.spec-indicator-head,
+.spec-indicator-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: flex-end;
+}
+
+.spec-id-field {
+  flex-basis: 8rem;
+}
+
+.spec-ind-select {
+  flex-basis: 16rem;
+}
+
+.spec-ind-del,
+.spec-indicator .btn {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.spec-builder .filter-field {
+  gap: 0.25rem;
+}
+
+.spec-builder .filter-field input,
+.spec-builder .filter-field select {
+  min-width: 6rem;
+}
+
+.spec-input-err {
+  border-color: #e88c8c !important;
+}
+
+.spec-issue {
+  color: #e8b4b4;
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.spec-issue code {
+  color: #f0c98a;
+}
+
+/* --- дерево правил --- */
+
+.rule-node {
+  border-left: 2px solid rgba(120, 100, 160, 0.35);
+  padding-left: 0.6rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.rule-node-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rule-compare,
+.rule-arith {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.rule-arith {
+  border: 1px dashed var(--line);
+  border-radius: 0.4rem;
+  padding: 0.35rem;
+}
+
+.rule-operand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  background: rgba(28, 23, 48, 0.5);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  padding: 0.3rem 0.4rem;
+}
+
+.rule-operand select,
+.rule-operand input,
+.rule-node-head select,
+.rule-op select {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.2rem 0.35rem;
+  background: rgba(10, 8, 18, 0.8);
+  color: #d6e8dc;
+  border: 1px solid var(--line);
+  border-radius: 0.3rem;
+}
+
+.rule-operand input[type="number"] {
+  width: 5.5rem;
+}
+
+.rule-shift {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.rule-shift input {
+  width: 3.2rem;
+}
+
+.rule-op {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.rule-list,
+.rule-negate {
+  display: grid;
+  gap: 0.4rem;
+  padding-left: 0.4rem;
+}
+
+.rule-list-item {
+  display: flex;
+  gap: 0.35rem;
+  align-items: flex-start;
+}
+
+.rule-list-item .rule-node {
+  flex: 1;
+}
+
+.rule-del {
+  padding: 0.15rem 0.45rem;
+}
+
+.rule-add {
+  justify-self: start;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.rule-hint {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-style: italic;
+}
+
+/* --- тултип --- */
+
+.infotip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.25rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  cursor: help;
+  outline: none;
+}
+
+.infotip-pop {
+  position: absolute;
+  bottom: calc(100% + 0.35rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 18rem;
+  padding: 0.45rem 0.6rem;
+  background: #0c0a14;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.infotip-pop--below {
+  bottom: auto;
+  top: calc(100% + 0.35rem);
+}
+
+.infotip:hover .infotip-pop,
+.infotip:focus-visible .infotip-pop,
+.infotip:focus .infotip-pop {
+  opacity: 1;
+  visibility: visible;
+}
+
+.field-label-with-tip {
+  display: inline-flex;
+  align-items: center;
+}
