@@ -11,6 +11,7 @@ const DownloadHistoryPanel = lazy(() => import("./components/DownloadHistoryPane
 const NatsAdminPanel = lazy(() => import("./components/NatsAdminPanel/NatsAdminPanel"));
 const ClickHouseManagerPanel = lazy(() => import("./components/ClickHouseManagerPanel/ClickHouseManagerPanel"));
 const PostgresManagerPanel = lazy(() => import("./components/PostgresManagerPanel/PostgresManagerPanel"));
+const StrategyPanel = lazy(() => import("./components/StrategyPanel/StrategyPanel"));
 
 type PanelSpec = {
   id: string;
@@ -23,6 +24,7 @@ const PANELS: PanelSpec[] = [
   { id: "instruments", eyebrow: "Сервисы", title: "Инструменты", Component: InstrumentsPanel },
   { id: "candles", eyebrow: "Сервисы", title: "Свечи", Component: CandlesPanel },
   { id: "historicCandle_scheduler", eyebrow: "Сервисы", title: "Планировщик свечей", Component: SchedulerPanel },
+  { id: "strategy", eyebrow: "Сервисы", title: "Стратегии", Component: StrategyPanel },
   { id: "downloadHistory", eyebrow: "История", title: "История загрузок", Component: DownloadHistoryPanel },
   { id: "nats", eyebrow: "Админка / API", title: "Админка NATS", Component: NatsAdminPanel },
   { id: "clickhouse", eyebrow: "Админка / API", title: "ClickHouse", Component: ClickHouseManagerPanel },

@@ -89,6 +89,15 @@ function PostgresIcon({ className }: IconProps) {
   );
 }
 
+function StrategyIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M4 18 9 11l4 4 7-9" />
+      <path d="M15 6h5v5" />
+    </Svg>
+  );
+}
+
 function GroupIcon({ className }: IconProps) {
   return (
     <Svg className={className}>
@@ -104,6 +113,7 @@ const ICONS: Record<string, (props: IconProps) => ReactNode> = {
   candles: CandlesIcon,
   downloadHistory: HistoryIcon,
   historicCandle_scheduler: SchedulerIcon,
+  strategy: StrategyIcon,
   nats: NatsIcon,
   clickhouse: ClickHouseIcon,
   postgresql: PostgresIcon,

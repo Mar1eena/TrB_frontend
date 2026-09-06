@@ -36,6 +36,13 @@ export const serviceTree: ServiceNode[] = [
         kind: "service",
         description: "Оркестратор задач по историческим свечам.",
       },
+      {
+        id: "strategy",
+        label: "Стратегии",
+        kind: "service",
+        description:
+          "Составление стратегий, бэктесты на backtrader, генетический поиск, просмотр результатов.",
+      },
     ],
   },
   {

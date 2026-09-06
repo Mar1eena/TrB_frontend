@@ -1,0 +1,396 @@
+.strategy-panel {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.strategy-tabs {
+  display: flex;
+  gap: 0.35rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.strategy-tab {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.92rem;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.strategy-tab:hover {
+  color: var(--text);
+}
+
+.strategy-tab.is-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.strategy-tab-body {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.85rem;
+  overflow: hidden;
+}
+
+.strategy-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.strategy-inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.strategy-inline-check input {
+  accent-color: var(--accent);
+}
+
+/* --- таблицы --- */
+
+.strategy-table-scroll {
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  overflow: auto;
+}
+
+.strategy-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.strategy-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #221a36;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid rgba(61, 186, 122, 0.35);
+  white-space: nowrap;
+}
+
+.strategy-table th.num,
+.strategy-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.strategy-table tbody td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(200, 180, 230, 0.08);
+  vertical-align: top;
+}
+
+.strategy-table tbody tr:nth-child(even) {
+  background: rgba(28, 23, 48, 0.5);
+}
+
+.strategy-table tbody tr.is-clickable {
+  cursor: pointer;
+}
+
+.strategy-table tbody tr.is-clickable:hover {
+  background: #1f3a2f;
+}
+
+.strategy-table tbody tr.is-archived {
+  opacity: 0.5;
+}
+
+.strategy-table.compact td,
+.strategy-table.compact th {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+.strategy-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.strategy-sub {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 0.15rem;
+}
+
+.strategy-row-actions {
+  display: flex;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.strategy-row-actions .btn {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+.trade-win td:nth-child(7),
+.trade-win td:nth-child(8) {
+  color: #7fd6a3;
+}
+
+.trade-loss td:nth-child(7),
+.trade-loss td:nth-child(8) {
+  color: #e88c8c;
+}
+
+/* --- чипы статусов --- */
+
+.strategy-chip {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.strategy-chip.ok {
+  color: #7fd6a3;
+  background: rgba(61, 186, 122, 0.16);
+  border-color: rgba(61, 186, 122, 0.4);
+}
+
+.strategy-chip.err {
+  color: #e88c8c;
+  background: rgba(220, 120, 120, 0.16);
+  border-color: rgba(220, 120, 120, 0.4);
+}
+
+.strategy-chip.run {
+  color: #8fc7e8;
+  background: rgba(90, 160, 210, 0.16);
+  border-color: rgba(90, 160, 210, 0.4);
+}
+
+.strategy-chip.queued {
+  color: #d4c08a;
+  background: rgba(212, 160, 48, 0.14);
+  border-color: rgba(212, 160, 48, 0.35);
+}
+
+.strategy-chip.muted {
+  color: var(--muted);
+  background: rgba(200, 180, 230, 0.1);
+  border-color: var(--line);
+}
+
+/* --- модалка --- */
+
+.strategy-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(6, 4, 12, 0.62);
+  backdrop-filter: blur(3px);
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+}
+
+.strategy-modal {
+  width: min(56rem, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #161221;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  padding: 1.25rem 1.4rem 1.5rem;
+  display: grid;
+  gap: 0.9rem;
+  animation: rise 0.25s ease-out both;
+}
+
+.strategy-modal.wide {
+  width: min(72rem, 100%);
+}
+
+.strategy-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.strategy-modal-head h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.2rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.strategy-modal-close {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 0.4rem;
+  font-size: 1.2rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.strategy-modal-close:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.strategy-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+}
+
+.strategy-json-field textarea {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  border: 1px solid var(--line);
+  background: rgba(10, 8, 18, 0.8);
+  color: #d6e8dc;
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.5rem;
+  resize: vertical;
+}
+
+.strategy-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.strategy-issues {
+  list-style: none;
+  display: grid;
+  gap: 0.3rem;
+  color: #e8b4b4;
+  font-size: 0.85rem;
+}
+
+.strategy-issues code {
+  color: #f0c98a;
+}
+
+.strategy-ok {
+  color: #7fd6a3;
+  margin: 0;
+}
+
+/* --- результат бэктеста --- */
+
+.strategy-result-meta {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.strategy-error {
+  margin-top: 0.4rem;
+  color: #e88c8c;
+  font-size: 0.84rem;
+  white-space: pre-wrap;
+}
+
+.strategy-running {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #8fc7e8;
+  font-size: 0.86rem;
+}
+
+.strategy-spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid rgba(143, 199, 232, 0.3);
+  border-top-color: #8fc7e8;
+  border-radius: 50%;
+  animation: strategy-spin 0.8s linear infinite;
+}
+
+@keyframes strategy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.strategy-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.5rem;
+}
+
+.strategy-metric {
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  background: rgba(28, 23, 48, 0.5);
+  display: grid;
+  gap: 0.2rem;
+}
+
+.strategy-metric-label {
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.strategy-metric-value {
+  font-size: 1.02rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.strategy-chart-wrap {
+  height: 18rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  overflow: hidden;
+}
+
+.strategy-equity-chart {
+  width: 100%;
+  height: 100%;
+}
+
+.strategy-trades h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.strategy-trades-scroll {
+  max-height: 20rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+
+.strategy-space-row {
+  gap: 0.75rem;
+}
+
+.strategy-space-row .strategy-json-field {
+  flex: 1 1 20rem;
+}
