@@ -107,17 +107,3 @@ export const SPEC_TEMPLATES: SpecTemplate[] = [
 ];
 
 export const EMPTY_SPEC: StrategySpec = SPEC_TEMPLATES[0].spec;
-
-export const DEFAULT_SEARCH_SPACE = [
-  { path: "indicators.rsi.settings.rsi.period", ints: { min: 5, max: 30, step: 1 } },
-  { path: "entryLong.compare.right.constant", floats: { min: 15, max: 40 } },
-  { path: "risk.stopLossPct", floats: { min: 0.02, max: 0.12 } },
-];
-
-export const DEFAULT_STRUCTURE = {
-  indicatorPalette: ["rsi", "sma", "ema", "atr"],
-  maxConditions: 4,
-  maxDepth: 3,
-  allowedOps: ["COMPARE_OP_GT", "COMPARE_OP_LT", "COMPARE_OP_GE", "COMPARE_OP_LE"],
-  mutateStructure: true,
-};

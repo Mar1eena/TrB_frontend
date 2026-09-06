@@ -94,6 +94,16 @@ export type TradeRecord = {
   exitReason: string;
 };
 
+export type BacktestIndicatorPoint = { time: string; values: Record<string, number> };
+
+export type BacktestIndicatorSeries = {
+  indicatorId: string;
+  indicator: string;
+  outputKey: string;
+  overlay: boolean;
+  points: BacktestIndicatorPoint[];
+};
+
 export type BacktestRunListItem = { run: BacktestRun; metrics?: BacktestMetrics };
 
 export type ValidationIssue = { path: string; message: string };
@@ -258,17 +268,24 @@ export function getBacktestStatus(runId: string): Promise<BacktestRun> {
 
 export function getBacktestResult(
   runId: string,
-  opts: { includeEquity?: boolean; includeTrades?: boolean; equityMaxPoints?: number } = {},
+  opts: {
+    includeEquity?: boolean;
+    includeTrades?: boolean;
+    includeIndicators?: boolean;
+    equityMaxPoints?: number;
+  } = {},
 ): Promise<{
   run: BacktestRun;
   metrics?: BacktestMetrics;
   equity?: EquityPoint[];
   trades?: TradeRecord[];
+  indicators?: BacktestIndicatorSeries[];
 }> {
   return call(
     `/backtests/${encodeURIComponent(runId)}/result${qs({
       includeEquity: opts.includeEquity,
       includeTrades: opts.includeTrades,
+      includeIndicators: opts.includeIndicators,
       equityMaxPoints: opts.equityMaxPoints,
     })}`,
   );

@@ -2,15 +2,21 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useNotify } from "../../notifications";
 import { CANDLE_INTERVALS, fetchInstruments } from "../../api/scheduler";
 import * as api from "../../api/strategy";
-import {
-  DEFAULT_SEARCH_SPACE,
-  DEFAULT_STRUCTURE,
-  SPEC_TEMPLATES,
-  type SpecTemplate,
-} from "./templates";
+import { SPEC_TEMPLATES, type SpecTemplate } from "./templates";
 import EquityChart from "./EquityChart";
 import PriceChart from "./PriceChart";
 import SpecBuilder from "./SpecBuilder";
+import { InfoTip } from "./InfoTip";
+import {
+  DEFAULT_SPACE_ROWS,
+  DEFAULT_STRUCTURE_FORM,
+  SearchSpaceBuilder,
+  SearchStructureBuilder,
+  spaceRowsToJson,
+  structureToJson,
+  type SearchStructure,
+  type SpaceRow,
+} from "./SearchBuilders";
 import { normalizeSpec, pruneSpec } from "./specModel";
 import "../SchedulerPanel/SchedulerPanel.css";
 import "../../styles/tables.css";
@@ -20,6 +26,9 @@ type Tab = "strategies" | "backtests" | "search";
 type Instrument = { uid: string; ticker: string; name: string };
 
 const ACTIVE_STATUSES: api.RunStatus[] = ["RUN_QUEUED", "RUN_RUNNING"];
+
+// Бэкенд без поля include_indicators отвечает ошибкой — узнаём один раз за сессию.
+let indicatorsSupported = true;
 
 function intervalLabel(v: number): string {
   return CANDLE_INTERVALS.find((iv) => iv.value === v)?.label ?? String(v);
@@ -37,6 +46,39 @@ function statusChip(status: api.RunStatus) {
             ? "muted"
             : "queued";
   return <span className={`strategy-chip ${cls}`}>{api.RUN_STATUS_LABEL[status]}</span>;
+}
+
+type NotifyApi = ReturnType<typeof useNotify>;
+
+const RUN_TOAST_KIND: Record<api.RunStatus, "ok" | "err" | "info" | null> = {
+  RUN_STATUS_UNSPECIFIED: null,
+  RUN_QUEUED: "info",
+  RUN_RUNNING: "info",
+  RUN_SUCCEEDED: "ok",
+  RUN_FAILED: "err",
+  RUN_CANCELED: "info",
+};
+
+/** Пуш-уведомление при смене статуса прогона (реальное время через опрос). */
+function notifyRunTransition(
+  notify: NotifyApi,
+  prev: api.RunStatus | null | undefined,
+  next: api.RunStatus,
+  label: string,
+): void {
+  if (prev === next || prev == null) return;
+  const kind = RUN_TOAST_KIND[next];
+  if (!kind) return;
+  const text = `${label} — ${api.RUN_STATUS_LABEL[next]}`;
+  if (kind === "ok") notify.success(text, "Бэктест");
+  else if (kind === "err") notify.error(text, "Бэктест");
+  else notify.info(text, "Бэктест");
+}
+
+function fmtElapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m} мин ${s % 60} с` : `${s} с`;
 }
 
 function isoDaysAgo(days: number): string {
@@ -125,11 +167,6 @@ export default function StrategyPanel() {
       <header className="scheduler-header">
         <p className="eyebrow">Сервисы</p>
         <h1>Стратегии</h1>
-        <p>
-          Составление стратегий (дерево правил над индикаторами), бэктесты на{" "}
-          <code>backtrader</code> и генетический поиск. Результаты — метрики,
-          кривая капитала и сделки.
-        </p>
       </header>
 
       <div className="strategy-tabs">
@@ -576,6 +613,7 @@ function BacktestsTab({
 
   const [runs, setRuns] = useState<api.BacktestRunListItem[]>([]);
   const [openRun, setOpenRun] = useState<string | null>(null);
+  const statusSeenRef = useRef<Map<string, api.RunStatus>>(new Map());
 
   useEffect(() => {
     if (prefillStrategyId) {
@@ -587,7 +625,16 @@ function BacktestsTab({
   const loadRuns = useCallback(async () => {
     try {
       const res = await api.listBacktestRuns({ limit: 100, sortBy: "created_at", sortDesc: true });
-      setRuns(res.items ?? []);
+      const items = res.items ?? [];
+      // пуш-уведомления о смене статуса (кроме самой первой загрузки списка)
+      const seen = statusSeenRef.current;
+      const first = seen.size === 0;
+      for (const { run } of items) {
+        const prev = seen.get(run.runId);
+        if (!first) notifyRunTransition(notify, prev ?? run.status, run.status, `Прогон ${run.runId.slice(0, 8)}`);
+        seen.set(run.runId, run.status);
+      }
+      setRuns(items);
     } catch (err) {
       notify.error(err instanceof Error ? err.message : "Не удалось загрузить прогоны");
     }
@@ -597,13 +644,15 @@ function BacktestsTab({
     void loadRuns();
   }, [loadRuns]);
 
-  // авто-обновление, пока есть активные прогоны
+  // авто-обновление, пока есть активные прогоны; при открытой модалке
+  // статус тянет она сама — список не дёргаем.
   useEffect(() => {
+    if (openRun) return;
     const hasActive = runs.some((r) => ACTIVE_STATUSES.includes(r.run.status));
     if (!hasActive) return;
-    const id = window.setInterval(() => void loadRuns(), 3000);
+    const id = window.setInterval(() => void loadRuns(), 5000);
     return () => window.clearInterval(id);
-  }, [runs, loadRuns]);
+  }, [runs, loadRuns, openRun]);
 
   const submit = async () => {
     if (!strategyId) {
@@ -836,59 +885,99 @@ function BacktestResultModal({
 }) {
   const notify = useNotify();
   const [data, setData] = useState<Awaited<ReturnType<typeof api.getBacktestResult>> | null>(null);
+  const [statusRun, setStatusRun] = useState<api.BacktestRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [chartTab, setChartTab] = useState<"equity" | "price">("price");
-  const pollRef = useRef<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const prevStatusRef = useRef<api.RunStatus | null>(null);
+  const startedAtRef = useRef<number>(Date.now());
 
-  const load = useCallback(async () => {
+  // Тяжёлый запрос (equity + trades + индикаторы) — только когда прогон завершён.
+  const loadResult = useCallback(async () => {
+    const base = { includeEquity: true, includeTrades: true, equityMaxPoints: 4000 } as const;
     try {
-      const res = await api.getBacktestResult(runId, {
-        includeEquity: true,
-        includeTrades: true,
-        equityMaxPoints: 4000,
-      });
+      let res;
+      // includeIndicators поддерживается не всеми версиями бэкенда — один раз проверяем и запоминаем.
+      if (indicatorsSupported) {
+        try {
+          res = await api.getBacktestResult(runId, { ...base, includeIndicators: true });
+        } catch {
+          indicatorsSupported = false;
+          res = await api.getBacktestResult(runId, base);
+        }
+      } else {
+        res = await api.getBacktestResult(runId, base);
+      }
       setData(res);
-      setLoading(false);
-      return res.run.status;
+      setStatusRun(res.run);
     } catch (err) {
       notify.error(err instanceof Error ? err.message : "Не удалось загрузить результат");
+    } finally {
       setLoading(false);
-      return "RUN_FAILED" as api.RunStatus;
+    }
+  }, [runId, notify]);
+
+  // Лёгкий запрос статуса — для опроса, пока прогон активен (без equity/trades).
+  const loadStatus = useCallback(async (): Promise<api.RunStatus> => {
+    try {
+      const run = await api.getBacktestStatus(runId);
+      setStatusRun(run);
+      const startedMs = run.startedAt ? Date.parse(run.startedAt) : NaN;
+      if (Number.isFinite(startedMs)) startedAtRef.current = startedMs;
+      notifyRunTransition(notify, prevStatusRef.current, run.status, `Прогон ${runId.slice(0, 8)}`);
+      prevStatusRef.current = run.status;
+      return run.status;
+    } catch {
+      return "RUN_STATUS_UNSPECIFIED";
     }
   }, [runId, notify]);
 
   useEffect(() => {
     let stopped = false;
+    let timer: number | null = null;
     void (async () => {
-      const status = await load();
-      if (!stopped && ACTIVE_STATUSES.includes(status)) {
-        pollRef.current = window.setInterval(async () => {
-          const s = await load();
+      const status = await loadStatus();
+      if (stopped) return;
+      if (ACTIVE_STATUSES.includes(status)) {
+        setLoading(false);
+        timer = window.setInterval(async () => {
+          const s = await loadStatus();
           if (!ACTIVE_STATUSES.includes(s)) {
-            if (pollRef.current) window.clearInterval(pollRef.current);
+            if (timer) window.clearInterval(timer);
+            timer = null;
+            await loadResult();
             onRefreshList();
           }
         }, 3000);
+      } else {
+        await loadResult();
       }
     })();
     return () => {
       stopped = true;
-      if (pollRef.current) window.clearInterval(pollRef.current);
+      if (timer) window.clearInterval(timer);
     };
-  }, [load, onRefreshList]);
+  }, [loadStatus, loadResult, onRefreshList]);
+
+  // счётчик времени, пока прогон активен
+  useEffect(() => {
+    if (!ACTIVE_STATUSES.includes(statusRun?.status ?? "RUN_STATUS_UNSPECIFIED")) return;
+    const id = window.setInterval(() => setElapsed(Date.now() - startedAtRef.current), 1000);
+    return () => window.clearInterval(id);
+  }, [statusRun?.status]);
 
   const cancel = async () => {
     try {
       await api.cancelBacktest(runId);
       notify.info("Отмена запрошена");
-      void load();
+      void loadStatus();
       onRefreshList();
     } catch (err) {
       notify.error(err instanceof Error ? err.message : "Ошибка");
     }
   };
 
-  const run = data?.run;
+  const run = data?.run ?? statusRun;
   const metrics = data?.metrics;
   const trades = data?.trades ?? [];
 
@@ -917,7 +1006,9 @@ function BacktestResultModal({
 
         {ACTIVE_STATUSES.includes(run?.status ?? "RUN_STATUS_UNSPECIFIED") ? (
           <div className="strategy-running">
-            <span className="strategy-spinner" /> Прогон выполняется, результат обновится автоматически…
+            <span className="strategy-spinner" />
+            {run?.status === "RUN_QUEUED" ? "В очереди" : "Выполняется"} · {fmtElapsed(elapsed)} ·
+            обновляется автоматически…
             <button type="button" className="btn ghost" onClick={() => void cancel()}>
               Отменить
             </button>
@@ -972,7 +1063,7 @@ function BacktestResultModal({
             </div>
 
             {chartTab === "price" && run.config ? (
-              <PriceChart config={run.config} trades={trades} />
+              <PriceChart config={run.config} indicators={data?.indicators} trades={trades} />
             ) : null}
 
             {chartTab === "equity" && data?.equity && data.equity.length > 1 ? (
@@ -1063,9 +1154,11 @@ function SearchTab({
   const [population, setPopulation] = useState(20);
   const [generations, setGenerations] = useState(8);
   const [maxSeconds, setMaxSeconds] = useState(600);
-  const [spaceText, setSpaceText] = useState(() => JSON.stringify(DEFAULT_SEARCH_SPACE, null, 2));
-  const [structureText, setStructureText] = useState(() => JSON.stringify(DEFAULT_STRUCTURE, null, 2));
+  const [spaceRows, setSpaceRows] = useState<SpaceRow[]>(DEFAULT_SPACE_ROWS);
+  const [structure, setStructure] = useState<SearchStructure>(DEFAULT_STRUCTURE_FORM);
   const [submitting, setSubmitting] = useState(false);
+
+  const baseSpec = strategies.find((s) => s.id === baseStrategyId)?.spec;
 
   const [searches, setSearches] = useState<api.SearchRun[]>([]);
   const [openSearch, setOpenSearch] = useState<string | null>(null);
@@ -1084,13 +1177,14 @@ function SearchTab({
   }, [loadSearches]);
 
   useEffect(() => {
+    if (openSearch) return; // при открытой модалке прогресс тянет она сама
     const hasActive = searches.some((s) =>
       ACTIVE_STATUSES.includes(s.progress?.status ?? "RUN_QUEUED"),
     );
     if (!hasActive) return;
-    const id = window.setInterval(() => void loadSearches(), 4000);
+    const id = window.setInterval(() => void loadSearches(), 6000);
     return () => window.clearInterval(id);
-  }, [searches, loadSearches]);
+  }, [searches, loadSearches, openSearch]);
 
   const submit = async () => {
     if (!baseStrategyId) {
@@ -1101,13 +1195,9 @@ function SearchTab({
       notify.error("Выберите инструмент");
       return;
     }
-    let searchSpace: unknown[];
-    let structure: Record<string, unknown>;
-    try {
-      searchSpace = JSON.parse(spaceText);
-      structure = JSON.parse(structureText);
-    } catch (err) {
-      notify.error(`JSON пространства поиска: ${err instanceof Error ? err.message : ""}`);
+    const searchSpace = spaceRowsToJson(spaceRows);
+    if (searchSpace.length === 0) {
+      notify.error("Добавьте хотя бы один параметр для оптимизации");
       return;
     }
     setSubmitting(true);
@@ -1126,7 +1216,7 @@ function SearchTab({
           longOnly: true,
         },
         searchSpace,
-        structure,
+        structure: structureToJson(structure),
       });
       notify.success("Поиск запущен");
       await loadSearches();
@@ -1140,91 +1230,120 @@ function SearchTab({
 
   return (
     <>
-      <div className="filters-bar">
-        <div className="filters-row filters-fields">
-          <label className="filter-field" style={{ flexBasis: "16rem" }}>
-            <span>Базовая стратегия</span>
-            <select value={baseStrategyId} onChange={(e) => setBaseStrategyId(e.target.value)}>
-              <option value="">— выберите —</option>
-              {strategies
-                .filter((s) => !s.archived)
-                .map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
+      <div className="filters-bar search-filters">
+        <div className="search-section">
+          <p className="search-section-title">
+            Данные
+            <InfoTip text="Стратегия-заготовка, инструмент и период истории, на котором поиск оценивает кандидатов." />
+          </p>
+          <div className="filters-row filters-fields">
+            <label className="filter-field" style={{ flexBasis: "16rem" }}>
+              <span>Базовая стратегия</span>
+              <select value={baseStrategyId} onChange={(e) => setBaseStrategyId(e.target.value)}>
+                <option value="">— выберите —</option>
+                {strategies
+                  .filter((s) => !s.archived)
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label className="filter-field">
+              <span>Инструмент</span>
+              <input list="strategy-instruments-search" value={uid} onChange={(e) => setUid(e.target.value.trim())} />
+              <datalist id="strategy-instruments-search">
+                {instruments.slice(0, 2000).map((i) => (
+                  <option key={i.uid} value={i.uid}>
+                    {i.ticker} — {i.name}
                   </option>
                 ))}
-            </select>
-          </label>
-          <label className="filter-field">
-            <span>Инструмент</span>
-            <input list="strategy-instruments-search" value={uid} onChange={(e) => setUid(e.target.value.trim())} />
-            <datalist id="strategy-instruments-search">
-              {instruments.slice(0, 2000).map((i) => (
-                <option key={i.uid} value={i.uid}>
-                  {i.ticker} — {i.name}
-                </option>
-              ))}
-            </datalist>
-          </label>
-          <label className="filter-field">
-            <span>Интервал</span>
-            <select value={interval} onChange={(e) => setIntervalVal(Number(e.target.value))}>
-              {CANDLE_INTERVALS.map((iv) => (
-                <option key={iv.value} value={iv.value}>
-                  {iv.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="filter-field">
-            <span>С</span>
-            <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
-          </label>
-          <label className="filter-field">
-            <span>По</span>
-            <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
-          </label>
-          <label className="filter-field">
-            <span>Цель</span>
-            <select value={metric} onChange={(e) => setMetric(e.target.value)}>
-              <option value="sharpe">Sharpe</option>
-              <option value="cagr">CAGR</option>
-              <option value="cagr_over_maxdd">CAGR / MaxDD</option>
-              <option value="sqn">SQN</option>
-              <option value="total_return">Доходность</option>
-            </select>
-          </label>
-          <label className="filter-field">
-            <span>Мин. сделок</span>
-            <input type="number" value={minTrades} onChange={(e) => setMinTrades(Number(e.target.value))} />
-          </label>
-          <label className="filter-field">
-            <span>Популяция</span>
-            <input type="number" value={population} onChange={(e) => setPopulation(Number(e.target.value))} />
-          </label>
-          <label className="filter-field">
-            <span>Поколений</span>
-            <input type="number" value={generations} onChange={(e) => setGenerations(Number(e.target.value))} />
-          </label>
-          <label className="filter-field">
-            <span>Лимит, сек</span>
-            <input type="number" value={maxSeconds} onChange={(e) => setMaxSeconds(Number(e.target.value))} />
-          </label>
+              </datalist>
+            </label>
+            <label className="filter-field">
+              <span>Интервал</span>
+              <select value={interval} onChange={(e) => setIntervalVal(Number(e.target.value))}>
+                {CANDLE_INTERVALS.map((iv) => (
+                  <option key={iv.value} value={iv.value}>
+                    {iv.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-field">
+              <span>С</span>
+              <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+            </label>
+            <label className="filter-field">
+              <span>По</span>
+              <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
+            </label>
+          </div>
         </div>
-        <div className="filters-row strategy-space-row">
-          <label className="filter-field strategy-json-field">
-            <span>Пространство параметров (JSON)</span>
-            <textarea spellCheck={false} rows={8} value={spaceText} onChange={(e) => setSpaceText(e.target.value)} />
-          </label>
-          <label className="filter-field strategy-json-field">
-            <span>Структура (JSON)</span>
-            <textarea
-              spellCheck={false}
-              rows={8}
-              value={structureText}
-              onChange={(e) => setStructureText(e.target.value)}
-            />
-          </label>
+
+        <div className="search-section">
+          <p className="search-section-title">
+            Цель оптимизации
+            <InfoTip text="Метрика, которую поиск максимизирует, и минимальное число сделок, чтобы результат не был случайным." />
+          </p>
+          <div className="filters-row filters-fields">
+            <label className="filter-field">
+              <span>
+                Метрика
+                <InfoTip text="Sharpe — доходность на риск; CAGR — годовой рост; CAGR/MaxDD — рост с поправкой на просадку; SQN — качество системы; Доходность — суммарная за период." />
+              </span>
+              <select value={metric} onChange={(e) => setMetric(e.target.value)}>
+                <option value="sharpe">Sharpe</option>
+                <option value="cagr">CAGR</option>
+                <option value="cagr_over_maxdd">CAGR / MaxDD</option>
+                <option value="sqn">SQN</option>
+                <option value="total_return">Доходность</option>
+              </select>
+            </label>
+            <label className="filter-field">
+              <span>
+                Мин. сделок
+                <InfoTip text="Кандидаты с меньшим числом закрытых сделок отбраковываются — по 2–3 сделкам метрика недостоверна." />
+              </span>
+              <input type="number" value={minTrades} onChange={(e) => setMinTrades(Number(e.target.value))} />
+            </label>
+          </div>
+        </div>
+
+        <div className="search-section">
+          <p className="search-section-title">
+            Бюджет поиска
+            <InfoTip text="Сколько вариантов перебрать: популяция × поколения ≈ число бэктестов. Лимит по времени останавливает поиск досрочно." />
+          </p>
+          <div className="filters-row filters-fields">
+            <label className="filter-field">
+              <span>
+                Популяция
+                <InfoTip text="Сколько стратегий-кандидатов живёт в одном поколении. Больше — шире охват, но дольше." />
+              </span>
+              <input type="number" value={population} onChange={(e) => setPopulation(Number(e.target.value))} />
+            </label>
+            <label className="filter-field">
+              <span>
+                Поколений
+                <InfoTip text="Сколько раз популяция скрещивается и мутирует. Больше — глубже оптимизация." />
+              </span>
+              <input type="number" value={generations} onChange={(e) => setGenerations(Number(e.target.value))} />
+            </label>
+            <label className="filter-field">
+              <span>
+                Лимит, сек
+                <InfoTip text="Жёсткий предел на время всего поиска. По достижении возвращаются лучшие найденные к этому моменту." />
+              </span>
+              <input type="number" value={maxSeconds} onChange={(e) => setMaxSeconds(Number(e.target.value))} />
+            </label>
+          </div>
+        </div>
+
+        <div className="search-builders">
+          <SearchSpaceBuilder rows={spaceRows} onChange={setSpaceRows} spec={baseSpec} />
+          <SearchStructureBuilder value={structure} onChange={setStructure} />
         </div>
         <div className="filters-row filters-actions">
           <button type="button" className="btn primary" onClick={() => void submit()} disabled={submitting}>
