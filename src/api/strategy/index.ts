@@ -242,6 +242,12 @@ export function deleteStrategy(id: string): Promise<{ id: string; archived: bool
   return call(`/strategies/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+// DeleteStrategy на бэкенде переключает архивный статус — для архивной стратегии
+// этот же вызов возвращает её из архива.
+export function restoreStrategy(id: string): Promise<{ id: string; archived: boolean }> {
+  return call(`/strategies/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 export function validateStrategy(
   spec: StrategySpec,
 ): Promise<{ ok: boolean; issues?: ValidationIssue[] }> {

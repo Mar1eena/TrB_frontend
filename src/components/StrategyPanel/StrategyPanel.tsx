@@ -17,6 +17,7 @@ import {
   type SearchStructure,
   type SpaceRow,
 } from "./SearchBuilders";
+import { ConfirmDialog, PromptDialog } from "./ConfirmDialog";
 import { normalizeSpec, pruneSpec } from "./specModel";
 import "../SchedulerPanel/SchedulerPanel.css";
 import "../../styles/tables.css";
@@ -102,7 +103,7 @@ function toLocalInput(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function ActionIcon({ name }: { name: "edit" | "run" | "archive" }) {
+function ActionIcon({ name }: { name: "edit" | "run" | "archive" | "unarchive" }) {
   const paths: Record<string, ReactNode> = {
     edit: <path d="M4 13.5V16h2.5l7.4-7.4-2.5-2.5L4 13.5zM15.7 6.3a.7.7 0 0 0 0-1L14.7 4.3a.7.7 0 0 0-1 0l-1 1 2.5 2.5 1-1.5z" />,
     run: <path d="M6 4l9 6-9 6V4z" />,
@@ -110,6 +111,12 @@ function ActionIcon({ name }: { name: "edit" | "run" | "archive" }) {
       <>
         <path d="M3 5h14v3H3z" />
         <path d="M4 9h12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9zm4 2v2h4v-2H8z" />
+      </>
+    ),
+    unarchive: (
+      <>
+        <path d="M3 5h14v3H3z" />
+        <path d="M4 9h12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9zm6 1l3 3h-2v2.5h-2V13H7l3-3z" />
       </>
     ),
   };
@@ -236,14 +243,24 @@ function StrategiesTab({
     null,
   );
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState<api.Strategy | null>(null);
 
   const visible = includeArchived ? strategies : strategies.filter((s) => !s.archived);
 
   const archive = async (s: api.Strategy) => {
-    if (!window.confirm(`Архивировать стратегию «${s.name}»?`)) return;
     try {
       await api.deleteStrategy(s.id);
       notify.success("Стратегия архивирована");
+      onChanged();
+    } catch (err) {
+      notify.error(err instanceof Error ? err.message : "Ошибка");
+    }
+  };
+
+  const unarchive = async (s: api.Strategy) => {
+    try {
+      await api.restoreStrategy(s.id);
+      notify.success("Стратегия возвращена из архива");
       onChanged();
     } catch (err) {
       notify.error(err instanceof Error ? err.message : "Ошибка");
@@ -320,17 +337,27 @@ function StrategiesTab({
                       <ActionIcon name="run" />
                       Бэктест
                     </button>
-                    {!s.archived ? (
+                    {s.archived ? (
+                      <button
+                        type="button"
+                        className="strategy-action unarchive"
+                        title="Вернуть стратегию из архива"
+                        onClick={() => void unarchive(s)}
+                      >
+                        <ActionIcon name="unarchive" />
+                        Из архива
+                      </button>
+                    ) : (
                       <button
                         type="button"
                         className="strategy-action archive"
                         title="Переместить стратегию в архив"
-                        onClick={() => void archive(s)}
+                        onClick={() => setConfirmArchive(s)}
                       >
                         <ActionIcon name="archive" />
                         В архив
                       </button>
-                    ) : null}
+                    )}
                   </td>
                 </tr>
               );
@@ -346,6 +373,26 @@ function StrategiesTab({
           onSaved={() => {
             setEditor(null);
             onChanged();
+          }}
+        />
+      ) : null}
+
+      {confirmArchive ? (
+        <ConfirmDialog
+          title="Архивировать стратегию"
+          message={
+            <>
+              Стратегия «{confirmArchive.name}» будет скрыта из активных. Её можно вернуть кнопкой
+              «Из архива».
+            </>
+          }
+          confirmLabel="В архив"
+          tone="danger"
+          onCancel={() => setConfirmArchive(null)}
+          onConfirm={() => {
+            const s = confirmArchive;
+            setConfirmArchive(null);
+            void archive(s);
           }}
         />
       ) : null}
@@ -375,6 +422,7 @@ function SpecEditorModal({
   );
   const [issues, setIssues] = useState<api.ValidationIssue[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pendingTemplate, setPendingTemplate] = useState<SpecTemplate | null>(null);
 
   const applyTemplate = (tpl: SpecTemplate) => {
     setTemplateId(tpl.id);
@@ -459,7 +507,8 @@ function SpecEditorModal({
   const chooseTemplate = (id: string) => {
     const tpl = SPEC_TEMPLATES.find((t) => t.id === id);
     if (!tpl) return;
-    if (initial && !window.confirm(`Заменить текущую конфигурацию шаблоном «${tpl.label}»? Несохранённые изменения пропадут.`)) {
+    if (initial) {
+      setPendingTemplate(tpl);
       return;
     }
     applyTemplate(tpl);
@@ -468,6 +517,7 @@ function SpecEditorModal({
   const indicatorCount = Array.isArray(spec.indicators) ? spec.indicators.length : 0;
 
   return (
+    <>
     <div className="strategy-modal-overlay" onClick={() => (busy ? null : onClose())}>
       <div className="strategy-modal wide strategy-editor" onClick={(e) => e.stopPropagation()}>
         <header className="strategy-modal-head">
@@ -583,6 +633,26 @@ function SpecEditorModal({
         </footer>
       </div>
     </div>
+
+      {pendingTemplate ? (
+        <ConfirmDialog
+          title="Заменить конфигурацию шаблоном"
+          message={
+            <>
+              Текущее дерево правил будет заменено шаблоном «{pendingTemplate.label}». Несохранённые
+              изменения пропадут.
+            </>
+          }
+          confirmLabel="Заменить"
+          tone="danger"
+          onCancel={() => setPendingTemplate(null)}
+          onConfirm={() => {
+            applyTemplate(pendingTemplate);
+            setPendingTemplate(null);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -1229,8 +1299,8 @@ function SearchTab({
   };
 
   return (
-    <>
-      <div className="filters-bar search-filters">
+    <div className="search-layout">
+      <div className="filters-bar search-filters search-layout-settings">
         <div className="search-section">
           <p className="search-section-title">
             Данные
@@ -1355,7 +1425,7 @@ function SearchTab({
         </div>
       </div>
 
-      <div className="table-scroll table-scroll-fill strategy-table-scroll">
+      <div className="table-scroll table-scroll-fill strategy-table-scroll search-layout-list">
         <table className="strategy-table">
           <thead>
             <tr>
@@ -1413,7 +1483,7 @@ function SearchTab({
           onCreatedStrategy={onCreatedStrategy}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -1479,9 +1549,9 @@ function SearchResultModal({
     }
   };
 
-  const saveCandidate = async (c: api.SearchCandidate) => {
-    const name = window.prompt("Название новой стратегии", `${run?.name || "search"} #${c.rank}`);
-    if (!name) return;
+  const [saveTarget, setSaveTarget] = useState<api.SearchCandidate | null>(null);
+
+  const saveCandidate = async (c: api.SearchCandidate, name: string) => {
     try {
       await api.createStrategy({ name, description: `Из поиска ${searchId}`, spec: c.spec });
       notify.success("Стратегия создана");
@@ -1495,6 +1565,7 @@ function SearchResultModal({
   const active = ACTIVE_STATUSES.includes(p?.status ?? "RUN_QUEUED");
 
   return (
+    <>
     <div className="strategy-modal-overlay" onClick={onClose}>
       <div className="strategy-modal wide" onClick={(e) => e.stopPropagation()}>
         <header className="strategy-modal-head">
@@ -1555,7 +1626,7 @@ function SearchResultModal({
                       <td className="num">{c.metrics?.tradesCount ?? "—"}</td>
                       <td>{c.generation}</td>
                       <td>
-                        <button type="button" className="btn ghost" onClick={() => void saveCandidate(c)}>
+                        <button type="button" className="btn ghost" onClick={() => setSaveTarget(c)}>
                           Сохранить
                         </button>
                       </td>
@@ -1568,5 +1639,27 @@ function SearchResultModal({
         </div>
       </div>
     </div>
+
+      {saveTarget ? (
+        <PromptDialog
+          title="Сохранить как стратегию"
+          message={
+            <>
+              Кандидат #{saveTarget.rank || "—"} · score {api.num(saveTarget.score, 4)} — будет
+              добавлен в каталог стратегий.
+            </>
+          }
+          label="Название стратегии"
+          defaultValue={`${run?.name || "Поиск"} #${saveTarget.rank || saveTarget.generation}`}
+          confirmLabel="Сохранить"
+          onCancel={() => setSaveTarget(null)}
+          onSubmit={(name) => {
+            const c = saveTarget;
+            setSaveTarget(null);
+            void saveCandidate(c, name);
+          }}
+        />
+      ) : null}
+    </>
   );
 }

@@ -5,8 +5,8 @@
 import { useMemo, useState } from "react";
 import type { StrategySpec } from "../../api/strategy";
 import { FieldLabel, InfoTip } from "./InfoTip";
-import { INDICATORS } from "./specSchema.generated";
-import { categoryName, indDesc, indName } from "./specI18n";
+import { INDICATORS, INDICATOR_BY_KEY } from "./specSchema.generated";
+import { categoryName, indDesc, indName, paramDesc, paramName } from "./specI18n";
 
 export type SpaceRow = {
   path: string;
@@ -24,11 +24,113 @@ export type SearchStructure = {
   mutateStructure: boolean;
 };
 
+// Пути в spec — в snake_case: бэкенд разбирает их через protobuf-reflection
+// (поля сообщений там stop_loss_pct, entry_long, …), camelCase молча не находится.
 export const DEFAULT_SPACE_ROWS: SpaceRow[] = [
-  { path: "indicators.rsi.settings.rsi.period", kind: "int", min: 5, max: 30, step: 1 },
-  { path: "entryLong.compare.right.constant", kind: "float", min: 15, max: 40 },
-  { path: "risk.stopLossPct", kind: "float", min: 0.02, max: 0.12 },
+  { path: "risk.stop_loss_pct", kind: "float", min: 0.02, max: 0.12 },
+  { path: "risk.take_profit_pct", kind: "float", min: 0.04, max: 0.3 },
 ];
+
+// --- человекопонятный выбор параметров ---
+
+export type ParamOption = {
+  path: string;
+  label: string;
+  group: string;
+  kind: "int" | "float";
+  min: number;
+  max: number;
+  step?: number;
+  desc: string;
+};
+
+const RISK_OPTIONS: ParamOption[] = [
+  {
+    path: "risk.stop_loss_pct", label: "Стоп-лосс, % от входа", group: "Риск и позиция",
+    kind: "float", min: 0.01, max: 0.2,
+    desc: "Доля цены входа, на которой позиция закрывается с убытком. 0.05 = 5%.",
+  },
+  {
+    path: "risk.take_profit_pct", label: "Тейк-профит, % от входа", group: "Риск и позиция",
+    kind: "float", min: 0.02, max: 0.5,
+    desc: "Доля цены входа, на которой фиксируется прибыль. 0.12 = 12%.",
+  },
+  {
+    path: "risk.trailing_pct", label: "Трейлинг-стоп, %", group: "Риск и позиция",
+    kind: "float", min: 0.01, max: 0.2,
+    desc: "Плавающий стоп: отступ от достигнутого максимума прибыли.",
+  },
+  {
+    path: "sizing.percent_equity", label: "Размер позиции, % капитала", group: "Риск и позиция",
+    kind: "float", min: 0.1, max: 1,
+    desc: "Какую долю счёта вкладывать в одну сделку. 0.95 = 95%.",
+  },
+];
+
+function roundTo(v: number, digits: number): number {
+  const f = 10 ** digits;
+  return Math.round(v * f) / f;
+}
+
+/** Числовые параметры, которые есть в выбранной базовой стратегии. */
+export function optimizableParams(spec: StrategySpec | undefined): ParamOption[] {
+  const out: ParamOption[] = [...RISK_OPTIONS];
+
+  const inds = Array.isArray(spec?.indicators)
+    ? (spec.indicators as { id?: string; settings?: Record<string, Record<string, number>> }[])
+    : [];
+  for (const ref of inds) {
+    const type = Object.keys(ref.settings ?? {})[0];
+    const id = ref.id || type;
+    if (!type || !id) continue;
+    const def = INDICATOR_BY_KEY[type];
+    if (!def) continue;
+    for (const p of def.params) {
+      if (p.type === "enum") continue;
+      const cur = Number(ref.settings?.[type]?.[p.jsonName] ?? p.default) || p.default || 14;
+      const isInt = p.type === "int";
+      const min = isInt ? Math.max(2, Math.floor(cur / 3)) : roundTo(cur * 0.3, 4);
+      const max = isInt ? Math.max(min + 1, Math.ceil(cur * 3)) : roundTo(Math.max(cur * 3, 0.01), 4);
+      out.push({
+        path: `indicators.${id}.settings.${type}.${p.name}`,
+        label: `${indName(type)} «${id}» · ${paramName(p.jsonName)}`,
+        group: "Индикаторы стратегии",
+        kind: isInt ? "int" : "float",
+        min,
+        max,
+        step: isInt ? 1 : undefined,
+        desc: paramDesc(p.jsonName) || `Параметр ${p.jsonName} индикатора ${indName(type)}.`,
+      });
+    }
+  }
+
+  // Порог-константа в правиле сравнения (RSI < 30 и т.п.)
+  const trees: [string, string][] = [
+    ["entry_long", "Порог входа в long"],
+    ["exit_long", "Порог выхода из long"],
+    ["entry_short", "Порог входа в short"],
+    ["exit_short", "Порог выхода из short"],
+  ];
+  const specObj = (spec ?? {}) as Record<string, unknown>;
+  for (const [snake, label] of trees) {
+    const camel = snake.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    const tree = specObj[camel] as { compare?: { right?: { constant?: number } } } | undefined;
+    if (tree?.compare?.right && typeof tree.compare.right.constant === "number") {
+      const c = tree.compare.right.constant;
+      out.push({
+        path: `${snake}.compare.right.constant`,
+        label,
+        group: "Пороги правил",
+        kind: "float",
+        min: roundTo(Math.min(c * 0.5, c - 5), 2),
+        max: roundTo(Math.max(c * 1.5, c + 5), 2),
+        desc: "Константа в условии сравнения — уровень, с которым поиск будет сопоставлять индикатор.",
+      });
+    }
+  }
+
+  return out;
+}
 
 export const DEFAULT_STRUCTURE_FORM: SearchStructure = {
   indicatorPalette: ["rsi", "sma", "ema", "atr"],
@@ -83,28 +185,7 @@ export function structureToJson(s: SearchStructure): Record<string, unknown> {
   };
 }
 
-/** Кандидаты путей из выбранной базовой стратегии — подсказки в datalist. */
-export function suggestedPaths(spec: StrategySpec | undefined): string[] {
-  const out = new Set<string>([
-    "risk.stopLossPct",
-    "risk.takeProfitPct",
-    "risk.trailingPct",
-    "sizing.percentEquity",
-    "entryLong.compare.right.constant",
-    "exitLong.compare.right.constant",
-  ]);
-  const inds = Array.isArray(spec?.indicators)
-    ? (spec.indicators as { settings?: Record<string, Record<string, number>> }[])
-    : [];
-  for (const ref of inds) {
-    const key = Object.keys(ref.settings ?? {})[0];
-    if (!key) continue;
-    for (const p of Object.keys(ref.settings?.[key] ?? {})) {
-      out.add(`indicators.${key}.settings.${key}.${p}`);
-    }
-  }
-  return [...out];
-}
+const CUSTOM = "__custom__";
 
 export function SearchSpaceBuilder({
   rows,
@@ -115,91 +196,165 @@ export function SearchSpaceBuilder({
   onChange: (rows: SpaceRow[]) => void;
   spec: StrategySpec | undefined;
 }) {
-  const paths = useMemo(() => suggestedPaths(spec), [spec]);
-  const listId = "search-space-paths";
+  const options = useMemo(() => optimizableParams(spec), [spec]);
+  const byPath = useMemo(() => new Map(options.map((o) => [o.path, o])), [options]);
+  const groups = useMemo(() => {
+    const g = new Map<string, ParamOption[]>();
+    for (const o of options) {
+      const arr = g.get(o.group) ?? [];
+      arr.push(o);
+      g.set(o.group, arr);
+    }
+    return [...g.entries()];
+  }, [options]);
 
   const update = (i: number, patch: Partial<SpaceRow>) => {
     onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   };
   const remove = (i: number) => onChange(rows.filter((_, idx) => idx !== i));
-  const add = () => onChange([...rows, { path: "", kind: "float", min: 0, max: 1 }]);
+
+  const addOption = (o: ParamOption) =>
+    onChange([...rows, { path: o.path, kind: o.kind, min: o.min, max: o.max, step: o.step }]);
+  const addFirstFree = () => {
+    const used = new Set(rows.map((r) => r.path));
+    const free = options.find((o) => !used.has(o.path));
+    if (free) addOption(free);
+    else onChange([...rows, { path: "", kind: "float", min: 0, max: 1 }]);
+  };
+  const fillFromStrategy = () => {
+    const used = new Set(rows.map((r) => r.path));
+    const add = options
+      .filter((o) => o.group === "Индикаторы стратегии" && !used.has(o.path))
+      .map((o) => ({ path: o.path, kind: o.kind, min: o.min, max: o.max, step: o.step }));
+    if (add.length) onChange([...rows, ...add]);
+  };
+
+  const pickPath = (i: number, value: string) => {
+    if (value === CUSTOM) {
+      update(i, { path: "" });
+      return;
+    }
+    const o = byPath.get(value);
+    if (o) update(i, { path: o.path, kind: o.kind, min: o.min, max: o.max, step: o.step });
+  };
+
+  const hasIndParams = options.some((o) => o.group === "Индикаторы стратегии");
 
   return (
     <div className="search-builder">
       <div className="search-builder-head">
         <span>
-          Параметры для оптимизации
-          <InfoTip text="Числа в стратегии, которые поиск будет перебирать в заданном диапазоне. Путь — адрес значения в spec." />
+          Что подбирать
+          <InfoTip text="Числовые настройки выбранной стратегии, которые поиск будет перебирать в заданном диапазоне, отыскивая лучшую комбинацию. Выберите параметр из списка и задайте границы." />
         </span>
-        <button type="button" className="btn ghost sm" onClick={add}>
-          + параметр
-        </button>
+        <span className="search-space-add">
+          {hasIndParams ? (
+            <button type="button" className="btn ghost sm" onClick={fillFromStrategy}>
+              из стратегии
+            </button>
+          ) : null}
+          <button type="button" className="btn ghost sm" onClick={addFirstFree}>
+            + параметр
+          </button>
+        </span>
       </div>
-      <datalist id={listId}>
-        {paths.map((p) => (
-          <option key={p} value={p} />
-        ))}
-      </datalist>
+
       {rows.length === 0 ? (
-        <p className="hint">Добавьте хотя бы один параметр — иначе поиску нечего перебирать.</p>
+        <p className="hint">
+          {spec
+            ? "Добавьте хотя бы один параметр — иначе поиску нечего перебирать."
+            : "Выберите базовую стратегию, чтобы подставить параметры её индикаторов; настройки риска доступны сразу."}
+        </p>
       ) : (
         <div className="search-space-rows">
           <div className="search-space-row search-space-row--head">
-            <span>Путь в spec</span>
+            <span>Параметр</span>
             <span>Тип</span>
             <span>Мин</span>
             <span>Макс</span>
             <span>Шаг</span>
             <span />
           </div>
-          {rows.map((r, i) => (
-            <div key={i} className="search-space-row">
-              <input
-                className="search-space-path"
-                list={listId}
-                placeholder="risk.stopLossPct"
-                value={r.path}
-                onChange={(e) => update(i, { path: e.target.value })}
-              />
-              <select
-                value={r.kind}
-                onChange={(e) => update(i, { kind: e.target.value as "int" | "float" })}
-              >
-                <option value="float">дробный</option>
-                <option value="int">целый</option>
-              </select>
-              <input
-                type="number"
-                className="search-space-num"
-                value={r.min}
-                onChange={(e) => update(i, { min: Number(e.target.value) })}
-              />
-              <input
-                type="number"
-                className="search-space-num"
-                value={r.max}
-                onChange={(e) => update(i, { max: Number(e.target.value) })}
-              />
-              <input
-                type="number"
-                className="search-space-num"
-                placeholder="—"
-                disabled={r.kind !== "int"}
-                value={r.step ?? ""}
-                onChange={(e) =>
-                  update(i, { step: e.target.value ? Number(e.target.value) : undefined })
-                }
-              />
-              <button
-                type="button"
-                className="search-space-del"
-                title="Удалить"
-                onClick={() => remove(i)}
-              >
-                ×
-              </button>
-            </div>
-          ))}
+          {rows.map((r, i) => {
+            const known = byPath.get(r.path);
+            const isCustom = !known;
+            return (
+              <div key={i} className="search-space-row">
+                <span className="search-space-param">
+                  {isCustom ? (
+                    <input
+                      className="search-space-path"
+                      placeholder="risk.stop_loss_pct"
+                      value={r.path}
+                      onChange={(e) => update(i, { path: e.target.value.trim() })}
+                    />
+                  ) : (
+                    <select value={r.path} onChange={(e) => pickPath(i, e.target.value)}>
+                      {groups.map(([name, opts]) => (
+                        <optgroup key={name} label={name}>
+                          {opts.map((o) => (
+                            <option key={o.path} value={o.path}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                      <option value={CUSTOM}>— свой путь в spec —</option>
+                    </select>
+                  )}
+                  {known ? (
+                    <InfoTip text={known.desc} />
+                  ) : (
+                    <button
+                      type="button"
+                      className="search-space-mode"
+                      title="Выбрать из списка"
+                      onClick={() => update(i, { path: options[0]?.path ?? "" })}
+                    >
+                      ↩
+                    </button>
+                  )}
+                </span>
+                <select
+                  value={r.kind}
+                  onChange={(e) => update(i, { kind: e.target.value as "int" | "float" })}
+                >
+                  <option value="float">дробный</option>
+                  <option value="int">целый</option>
+                </select>
+                <input
+                  type="number"
+                  className="search-space-num"
+                  value={r.min}
+                  onChange={(e) => update(i, { min: Number(e.target.value) })}
+                />
+                <input
+                  type="number"
+                  className="search-space-num"
+                  value={r.max}
+                  onChange={(e) => update(i, { max: Number(e.target.value) })}
+                />
+                <input
+                  type="number"
+                  className="search-space-num"
+                  placeholder="—"
+                  disabled={r.kind !== "int"}
+                  value={r.step ?? ""}
+                  onChange={(e) =>
+                    update(i, { step: e.target.value ? Number(e.target.value) : undefined })
+                  }
+                />
+                <button
+                  type="button"
+                  className="search-space-del"
+                  title="Удалить"
+                  onClick={() => remove(i)}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
