@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useNotify } from "../../notifications";
 import { CANDLE_INTERVALS, fetchInstruments } from "../../api/scheduler";
 import * as api from "../../api/strategy";
-import { SPEC_TEMPLATES, type SpecTemplate } from "./templates";
+import { BLANK_TEMPLATE, SPEC_TEMPLATES, type SpecTemplate } from "./templates";
 import EquityChart from "./EquityChart";
 import PriceChart from "./PriceChart";
 import SpecBuilder from "./SpecBuilder";
@@ -412,13 +412,13 @@ function SpecEditorModal({
   const notify = useNotify();
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
-  const [templateId, setTemplateId] = useState<string>(SPEC_TEMPLATES[0].id);
+  const [templateId, setTemplateId] = useState<string>(BLANK_TEMPLATE.id);
   const [mode, setMode] = useState<"builder" | "json">("builder");
   const [spec, setSpec] = useState<api.StrategySpec>(() =>
-    normalizeSpec(initial?.spec ?? SPEC_TEMPLATES[0].spec),
+    normalizeSpec(initial?.spec ?? BLANK_TEMPLATE.spec),
   );
   const [text, setText] = useState(() =>
-    JSON.stringify(pruneSpec(normalizeSpec(initial?.spec ?? SPEC_TEMPLATES[0].spec)), null, 2),
+    JSON.stringify(pruneSpec(normalizeSpec(initial?.spec ?? BLANK_TEMPLATE.spec)), null, 2),
   );
   const [issues, setIssues] = useState<api.ValidationIssue[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -561,6 +561,11 @@ function SpecEditorModal({
                   </option>
                 ))}
               </select>
+              {!initial ? (
+                <small className="strategy-template-hint">
+                  {SPEC_TEMPLATES.find((t) => t.id === templateId)?.description}
+                </small>
+              ) : null}
             </label>
           </div>
 

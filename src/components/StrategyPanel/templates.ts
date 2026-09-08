@@ -5,7 +5,26 @@ export type SpecTemplate = { id: string; label: string; description: string; spe
 // Шаблоны в camelCase + строковые enum — формат, который принимает
 // grpc_json_transcoder и который отдаёт бэкенд при чтении.
 
+// Пустой шаблон — «чистый лист». Идёт первым и выбран по умолчанию при
+// создании новой стратегии: без индикаторов, с правилами-заготовками, которые
+// pruneSpec выкидывает, пока пользователь их не заполнил.
+export const BLANK_TEMPLATE: SpecTemplate = {
+  id: "blank",
+  label: "Пустой шаблон",
+  description: "Чистый лист: без индикаторов и правил — всё настраивается вручную.",
+  spec: {
+    version: 1,
+    warmupBars: 0,
+    indicators: [],
+    entryLong: {},
+    exitLong: {},
+    sizing: { percentEquity: 0.95, maxOpenPositions: 1 },
+    risk: {},
+  },
+};
+
 export const SPEC_TEMPLATES: SpecTemplate[] = [
+  BLANK_TEMPLATE,
   {
     id: "rsi-mean-reversion",
     label: "RSI возврат к среднему",
@@ -106,4 +125,4 @@ export const SPEC_TEMPLATES: SpecTemplate[] = [
   },
 ];
 
-export const EMPTY_SPEC: StrategySpec = SPEC_TEMPLATES[0].spec;
+export const EMPTY_SPEC: StrategySpec = BLANK_TEMPLATE.spec;
