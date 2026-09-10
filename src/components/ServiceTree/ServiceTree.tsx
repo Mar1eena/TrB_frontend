@@ -1,11 +1,11 @@
 import { useState, type CSSProperties } from "react";
+import { useNavigate } from "react-router-dom";
 import type { ServiceNode } from "../../data/services";
 import { ServiceIcon } from "./ServiceIcons";
 
 type ServiceTreeProps = {
   nodes: ServiceNode[];
   selectedId: string | null;
-  onSelect: (id: string) => void;
   collapsed?: boolean;
 };
 
@@ -13,11 +13,11 @@ type TreeNodeProps = {
   node: ServiceNode;
   depth: number;
   selectedId: string | null;
-  onSelect: (id: string) => void;
   collapsed: boolean;
 };
 
-function TreeNode({ node, depth, selectedId, onSelect, collapsed }: TreeNodeProps) {
+function TreeNode({ node, depth, selectedId, collapsed }: TreeNodeProps) {
+  const navigate = useNavigate();
   const hasChildren = Boolean(node.children?.length);
   const isGroup = node.kind === "group" || hasChildren;
   const [open, setOpen] = useState(true);
@@ -53,7 +53,7 @@ function TreeNode({ node, depth, selectedId, onSelect, collapsed }: TreeNodeProp
               if (!collapsed) setOpen((value) => !value);
               return;
             }
-            onSelect(node.id);
+            navigate(`/${node.id}`);
           }}
         >
           <ServiceIcon id={node.id} className="tree-icon" />
@@ -69,7 +69,6 @@ function TreeNode({ node, depth, selectedId, onSelect, collapsed }: TreeNodeProp
               node={child}
               depth={depth + 1}
               selectedId={selectedId}
-              onSelect={onSelect}
               collapsed={collapsed}
             />
           ))}
@@ -79,24 +78,12 @@ function TreeNode({ node, depth, selectedId, onSelect, collapsed }: TreeNodeProp
   );
 }
 
-export default function ServiceTree({
-  nodes,
-  selectedId,
-  onSelect,
-  collapsed = false,
-}: ServiceTreeProps) {
+export default function ServiceTree({ nodes, selectedId, collapsed = false }: ServiceTreeProps) {
   return (
     <nav className={`service-tree${collapsed ? " is-collapsed" : ""}`} aria-label="Микросервисы">
       <ul className="tree-root">
         {nodes.map((node) => (
-          <TreeNode
-            key={node.id}
-            node={node}
-            depth={0}
-            selectedId={selectedId}
-            onSelect={onSelect}
-            collapsed={collapsed}
-          />
+          <TreeNode key={node.id} node={node} depth={0} selectedId={selectedId} collapsed={collapsed} />
         ))}
       </ul>
     </nav>

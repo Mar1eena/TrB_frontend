@@ -1,7 +1,16 @@
-import { Component, lazy, Suspense, useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, type ComponentType } from "react";
+import {
+  createBrowserRouter,
+  Navigate,
+  Outlet,
+  RouterProvider,
+  useParams,
+  useRouteError,
+} from "react-router-dom";
 import ServiceTree from "./components/ServiceTree/ServiceTree";
 import { findService, serviceTree } from "./data/services";
 import { NotificationsProvider } from "./notifications";
+import { useUiStore } from "./stores/ui";
 import "./App.css";
 
 const InstrumentsPanel = lazy(() => import("./components/InstrumentsPanel/InstrumentsPanel"));
@@ -13,23 +22,20 @@ const ClickHouseManagerPanel = lazy(() => import("./components/ClickHouseManager
 const PostgresManagerPanel = lazy(() => import("./components/PostgresManagerPanel/PostgresManagerPanel"));
 const StrategyPanel = lazy(() => import("./components/StrategyPanel/StrategyPanel"));
 
-type PanelSpec = {
-  id: string;
-  eyebrow: string;
-  title: string;
-  Component: ComponentType;
+type PanelSpec = { eyebrow: string; title: string; Component: ComponentType };
+
+const PANELS: Record<string, PanelSpec> = {
+  instruments: { eyebrow: "Сервисы", title: "Инструменты", Component: InstrumentsPanel },
+  candles: { eyebrow: "Сервисы", title: "Свечи", Component: CandlesPanel },
+  historicCandle_scheduler: { eyebrow: "Сервисы", title: "Планировщик свечей", Component: SchedulerPanel },
+  strategy: { eyebrow: "Сервисы", title: "Стратегии", Component: StrategyPanel },
+  downloadHistory: { eyebrow: "История", title: "История загрузок", Component: DownloadHistoryPanel },
+  nats: { eyebrow: "Админка / API", title: "Админка NATS", Component: NatsAdminPanel },
+  clickhouse: { eyebrow: "Админка / API", title: "ClickHouse", Component: ClickHouseManagerPanel },
+  postgresql: { eyebrow: "Админка / API", title: "PostgreSQL", Component: PostgresManagerPanel },
 };
 
-const PANELS: PanelSpec[] = [
-  { id: "instruments", eyebrow: "Сервисы", title: "Инструменты", Component: InstrumentsPanel },
-  { id: "candles", eyebrow: "Сервисы", title: "Свечи", Component: CandlesPanel },
-  { id: "historicCandle_scheduler", eyebrow: "Сервисы", title: "Планировщик свечей", Component: SchedulerPanel },
-  { id: "strategy", eyebrow: "Сервисы", title: "Стратегии", Component: StrategyPanel },
-  { id: "downloadHistory", eyebrow: "История", title: "История загрузок", Component: DownloadHistoryPanel },
-  { id: "nats", eyebrow: "Админка / API", title: "Админка NATS", Component: NatsAdminPanel },
-  { id: "clickhouse", eyebrow: "Админка / API", title: "ClickHouse", Component: ClickHouseManagerPanel },
-  { id: "postgresql", eyebrow: "Админка / API", title: "PostgreSQL", Component: PostgresManagerPanel },
-];
+const DEFAULT_PANEL = "nats";
 
 function PanelFallback({ eyebrow, title }: { eyebrow: string; title: string }) {
   return (
@@ -43,118 +49,109 @@ function PanelFallback({ eyebrow, title }: { eyebrow: string; title: string }) {
   );
 }
 
-class PanelErrorBoundary extends Component<
-  { children: ReactNode; onRetry: () => void },
-  { error: Error | null }
-> {
-  state = { error: null as Error | null };
+function PanelRoute() {
+  const { panelId = "" } = useParams();
+  const panel = PANELS[panelId];
+  const service = findService(serviceTree, panelId);
 
-  static getDerivedStateFromError(error: Error) {
-    return { error };
+  if (!panel) {
+    return (
+      <section className="panel">
+        <p className="eyebrow">Сервис</p>
+        <h1>{service?.label ?? "Не выбран"}</h1>
+        <p>{service?.description ?? "Выберите микросервис в дереве слева."}</p>
+      </section>
+    );
   }
 
-  render() {
-    if (this.state.error) {
-      return (
-        <section className="panel-page">
-          <header className="scheduler-header">
-            <p className="eyebrow">Ошибка</p>
-            <h1>Панель не загрузилась</h1>
-            <p>{this.state.error.message}</p>
-            <p>
-              <button type="button" className="btn" onClick={this.props.onRetry}>
-                Повторить
-              </button>
-            </p>
-          </header>
-        </section>
-      );
-    }
-    return this.props.children;
-  }
+  const { Component, eyebrow, title } = panel;
+  return (
+    <Suspense fallback={<PanelFallback eyebrow={eyebrow} title={title} />}>
+      <Component />
+    </Suspense>
+  );
 }
 
-export default function App() {
-  const [selectedId, setSelectedId] = useState<string>("nats");
-  const [panelEpoch, setPanelEpoch] = useState(0);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem("trb.sidebar.collapsed") === "1";
-    } catch {
-      return false;
-    }
-  });
-  const selected = findService(serviceTree, selectedId);
-  const panel = PANELS.find((item) => item.id === selectedId);
-  const ActivePanel = panel?.Component;
+function PanelErrorRoute() {
+  const error = useRouteError() as Error | undefined;
+  return (
+    <section className="panel-page">
+      <header className="scheduler-header">
+        <p className="eyebrow">Ошибка</p>
+        <h1>Панель не загрузилась</h1>
+        <p>{error?.message ?? "Неизвестная ошибка"}</p>
+        <p>
+          <button type="button" className="btn" onClick={() => window.location.reload()}>
+            Повторить
+          </button>
+        </p>
+      </header>
+    </section>
+  );
+}
+
+function Layout() {
+  const { panelId } = useParams();
+  const collapsed = useUiStore((s) => s.sidebarCollapsed);
+  const toggleSidebar = useUiStore((s) => s.toggleSidebar);
 
   useEffect(() => {
     document.getElementById("boot")?.remove();
   }, []);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem("trb.sidebar.collapsed", sidebarCollapsed ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  }, [sidebarCollapsed]);
+  return (
+    <div className={`layout${collapsed ? " is-sidebar-collapsed" : ""}`}>
+      <aside className={`sidebar${collapsed ? " is-collapsed" : ""}`}>
+        <div className="sidebar-top">
+          <div className="sidebar-brand">
+            {collapsed ? (
+              <>
+                T<span>.</span>
+              </>
+            ) : (
+              <>
+                TrB<span>.</span>
+              </>
+            )}
+          </div>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Показать панель" : "Скрыть панель"}
+            title={collapsed ? "Показать названия" : "Скрыть названия"}
+            onClick={toggleSidebar}
+          >
+            {collapsed ? "›" : "‹"}
+          </button>
+        </div>
+        {collapsed ? null : <p className="sidebar-caption">Микросервисы</p>}
+        <ServiceTree nodes={serviceTree} selectedId={panelId ?? null} collapsed={collapsed} />
+      </aside>
 
+      <main className="content">
+        <Outlet />
+      </main>
+    </div>
+  );
+}
+
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <Layout />,
+    children: [
+      { index: true, element: <Navigate to={`/${DEFAULT_PANEL}`} replace /> },
+      { path: ":panelId", element: <PanelRoute />, errorElement: <PanelErrorRoute /> },
+    ],
+  },
+  { path: "*", element: <Navigate to={`/${DEFAULT_PANEL}`} replace /> },
+]);
+
+export default function App() {
   return (
     <NotificationsProvider>
-      <div className={`layout${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
-        <aside className={`sidebar${sidebarCollapsed ? " is-collapsed" : ""}`}>
-          <div className="sidebar-top">
-            <div className="sidebar-brand">
-              {sidebarCollapsed ? (
-                <>
-                  T<span>.</span>
-                </>
-              ) : (
-                <>
-                  TrB<span>.</span>
-                </>
-              )}
-            </div>
-            <button
-              type="button"
-              className="sidebar-toggle"
-              aria-expanded={!sidebarCollapsed}
-              aria-label={sidebarCollapsed ? "Показать панель" : "Скрыть панель"}
-              title={sidebarCollapsed ? "Показать названия" : "Скрыть названия"}
-              onClick={() => setSidebarCollapsed((value) => !value)}
-            >
-              {sidebarCollapsed ? "›" : "‹"}
-            </button>
-          </div>
-          {sidebarCollapsed ? null : <p className="sidebar-caption">Микросервисы</p>}
-          <ServiceTree
-            nodes={serviceTree}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            collapsed={sidebarCollapsed}
-          />
-        </aside>
-
-        <main className="content">
-          <PanelErrorBoundary
-            key={`${selectedId}:${panelEpoch}`}
-            onRetry={() => setPanelEpoch((n) => n + 1)}
-          >
-            {ActivePanel && panel ? (
-              <Suspense fallback={<PanelFallback eyebrow={panel.eyebrow} title={panel.title} />}>
-                <ActivePanel />
-              </Suspense>
-            ) : (
-              <section className="panel">
-                <p className="eyebrow">Сервис</p>
-                <h1>{selected?.label ?? "Не выбран"}</h1>
-                <p>{selected?.description ?? "Выберите микросервис в дереве слева."}</p>
-              </section>
-            )}
-          </PanelErrorBoundary>
-        </main>
-      </div>
+      <RouterProvider router={router} />
     </NotificationsProvider>
   );
 }
