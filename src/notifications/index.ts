@@ -1,1 +1,7 @@
-export { NotificationsProvider, useNotify, type NotifyKind, type NotifyItem } from "./Notifications";
+export {
+  NotificationsProvider,
+  useNotify,
+  type NotifyKind,
+  type NotifyItem,
+  type NotifyApi,
+} from "./Notifications";
