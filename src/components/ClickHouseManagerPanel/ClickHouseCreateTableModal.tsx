@@ -1,20 +1,46 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useMemo } from "react";
+import { useFieldArray, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { type ChColumnWrite, type ChTableOptions } from "../../api/clickhouse";
 import { ModalBackdrop } from "../common/ModalBackdrop";
 
 const DEFAULT_KIND_OPTIONS = ["", "DEFAULT", "MATERIALIZED", "ALIAS", "EPHEMERAL"];
 
-type ColumnRow = {
-  name: string;
-  type: string;
-  codec: string;
-  default_kind: string;
-  default_expression: string;
-  ttl: string;
-  comment: string;
-};
+const columnSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+  codec: z.string(),
+  default_kind: z.string(),
+  default_expression: z.string(),
+  ttl: z.string(),
+  comment: z.string(),
+});
 
-function emptyColumnRow(): ColumnRow {
+const settingSchema = z.object({ key: z.string(), value: z.string() });
+
+const schema = z.object({
+  name: z
+    .string()
+    .min(1, "Укажите имя таблицы")
+    .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "Только латиница, цифры и _; не с цифры"),
+  engine: z.string().min(1, "Укажите движок"),
+  engineParams: z.string(),
+  orderBy: z.string(),
+  partitionBy: z.string(),
+  primaryKey: z.string(),
+  sampleBy: z.string(),
+  ttl: z.string(),
+  comment: z.string(),
+  columns: z.array(columnSchema).refine((rows) => rows.some((r) => r.name.trim()), {
+    message: "Добавьте хотя бы одну колонку",
+  }),
+  settings: z.array(settingSchema),
+});
+
+type FormValues = z.infer<typeof schema>;
+
+function emptyColumn(): FormValues["columns"][number] {
   return {
     name: "",
     type: "String",
@@ -25,6 +51,20 @@ function emptyColumnRow(): ColumnRow {
     comment: "",
   };
 }
+
+const DEFAULTS: FormValues = {
+  name: "",
+  engine: "MergeTree",
+  engineParams: "",
+  orderBy: "",
+  partitionBy: "",
+  primaryKey: "",
+  sampleBy: "",
+  ttl: "",
+  comment: "",
+  columns: [emptyColumn(), emptyColumn()],
+  settings: [],
+};
 
 export type CreateTableSubmit = {
   database: string;
@@ -61,23 +101,30 @@ function CreateTableModal({
   onClose,
   onSubmit,
 }: Props) {
-  const [tableName, setTableName] = useState("");
-  const [tableEngine, setTableEngine] = useState("MergeTree");
-  const [engineParams, setEngineParams] = useState("");
-  const [orderBy, setOrderBy] = useState("");
-  const [partitionBy, setPartitionBy] = useState("");
-  const [primaryKey, setPrimaryKey] = useState("");
-  const [sampleBy, setSampleBy] = useState("");
-  const [tableTtl, setTableTtl] = useState("");
-  const [tableComment, setTableComment] = useState("");
-  const [columnRows, setColumnRows] = useState<ColumnRow[]>(() => [emptyColumnRow(), emptyColumnRow()]);
-  const [tableSettings, setTableSettings] = useState<{ key: string; value: string }[]>([]);
-  const [formError, setFormError] = useState("");
+  const {
+    register,
+    control,
+    handleSubmit,
+    watch,
+    setError,
+    clearErrors,
+    formState: { errors },
+  } = useForm<FormValues>({
+    defaultValues: DEFAULTS,
+    resolver: zodResolver(schema),
+  });
+
+  const columns = useFieldArray({ control, name: "columns" });
+  const settings = useFieldArray({ control, name: "settings" });
 
   const engines = options?.engines ?? [];
   const types = options?.data_types ?? [];
   const mtSettings = options?.merge_tree_settings ?? [];
   const codecs = options?.codecs ?? [];
+
+  const tableEngine = watch("engine");
+  const tableName = watch("name");
+  const columnRows = watch("columns");
 
   const engineParamsPlaceholder = useMemo(() => {
     if (tableEngine.includes("Replacing")) return "ver, is_deleted";
@@ -86,21 +133,53 @@ function CreateTableModal({
     return "параметры через запятую (если нужны)";
   }, [tableEngine]);
 
-  const updateColumn = useCallback((idx: number, patch: Partial<ColumnRow>) => {
-    setColumnRows((prev) => {
-      const next = prev.slice();
-      next[idx] = { ...next[idx], ...patch };
-      return next;
-    });
-  }, []);
+  const submit = handleSubmit(async (values) => {
+    clearErrors("root");
+    const cols = values.columns
+      .filter((r) => r.name.trim())
+      .map((r) => ({
+        name: r.name.trim(),
+        type: r.type.trim(),
+        codec: r.codec.trim() || undefined,
+        default_kind: r.default_kind.trim() || undefined,
+        default_expression: r.default_expression.trim() || undefined,
+        ttl: r.ttl.trim() || undefined,
+        comment: r.comment.trim() || undefined,
+      }));
+    const settingsMap: Record<string, string> = {};
+    for (const row of values.settings) {
+      if (row.key.trim() && row.value.trim()) settingsMap[row.key.trim()] = row.value.trim();
+    }
+    try {
+      await onSubmit({
+        database,
+        name: values.name,
+        engine: values.engine,
+        engine_params: values.engineParams
+          ? values.engineParams.split(",").map((s) => s.trim()).filter(Boolean)
+          : undefined,
+        order_by: values.orderBy.trim() || undefined,
+        partition_by: values.partitionBy.trim() || undefined,
+        primary_key: values.primaryKey.trim() || undefined,
+        sample_by: values.sampleBy.trim() || undefined,
+        ttl: values.ttl.trim() || undefined,
+        comment: values.comment.trim() || undefined,
+        settings: Object.keys(settingsMap).length ? settingsMap : undefined,
+        if_not_exists: true,
+        columns: cols,
+      });
+    } catch (err) {
+      setError("root", { message: err instanceof Error ? err.message : String(err) });
+    }
+  });
 
-  const updateSetting = useCallback((idx: number, patch: Partial<{ key: string; value: string }>) => {
-    setTableSettings((prev) => {
-      const next = prev.slice();
-      next[idx] = { ...next[idx], ...patch };
-      return next;
-    });
-  }, []);
+  const formError =
+    errors.root?.message ||
+    errors.columns?.root?.message ||
+    errors.columns?.message ||
+    errors.name?.message ||
+    errors.engine?.message ||
+    "";
 
   return (
     <ModalBackdrop onClose={onClose} className="ch-modal-backdrop" title="Создание таблицы">
@@ -111,52 +190,7 @@ function CreateTableModal({
             ✕
           </button>
         </div>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            setFormError("");
-            const cols = columnRows
-              .filter((r) => r.name.trim())
-              .map((r) => ({
-                name: r.name.trim(),
-                type: r.type.trim(),
-                codec: r.codec.trim() || undefined,
-                default_kind: r.default_kind.trim() || undefined,
-                default_expression: r.default_expression.trim() || undefined,
-                ttl: r.ttl.trim() || undefined,
-                comment: r.comment.trim() || undefined,
-              }));
-            if (cols.length === 0) {
-              setFormError("Добавьте хотя бы одну колонку");
-              return;
-            }
-            const settings: Record<string, string> = {};
-            for (const row of tableSettings) {
-              if (row.key.trim() && row.value.trim()) {
-                settings[row.key.trim()] = row.value.trim();
-              }
-            }
-            void onSubmit({
-              database,
-              name: tableName,
-              engine: tableEngine,
-              engine_params: engineParams
-                ? engineParams.split(",").map((s) => s.trim()).filter(Boolean)
-                : undefined,
-              order_by: orderBy.trim() || undefined,
-              partition_by: partitionBy.trim() || undefined,
-              primary_key: primaryKey.trim() || undefined,
-              sample_by: sampleBy.trim() || undefined,
-              ttl: tableTtl.trim() || undefined,
-              comment: tableComment.trim() || undefined,
-              settings: Object.keys(settings).length ? settings : undefined,
-              if_not_exists: true,
-              columns: cols,
-            }).catch((err) => {
-              setFormError(err instanceof Error ? err.message : String(err));
-            });
-          }}
-        >
+        <form onSubmit={submit}>
           <div className="ch-modal-body">
             {formError && (
               <div className="ch-modal-alert is-err" role="alert">
@@ -164,7 +198,7 @@ function CreateTableModal({
                 <button
                   type="button"
                   className="dismiss-btn"
-                  onClick={() => setFormError("")}
+                  onClick={() => clearErrors()}
                   title="Закрыть"
                 >
                   ×
@@ -186,37 +220,22 @@ function CreateTableModal({
             <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "0.65rem" }}>
               <div className="field">
                 <label>Имя таблицы *</label>
-                <input
-                  type="text"
-                  required
-                  pattern="^[A-Za-z_][A-Za-z0-9_]*$"
-                  placeholder="hct_candles"
-                  value={tableName}
-                  onChange={(e) => setTableName(e.target.value)}
-                  autoFocus
-                />
+                <input type="text" placeholder="hct_candles" autoFocus {...register("name")} />
               </div>
               <div className="field">
                 <label>Движок (Engine) * — из system.table_engines</label>
                 <input
                   type="text"
                   list="create-table-engines"
-                  required
-                  value={tableEngine}
-                  onChange={(e) => setTableEngine(e.target.value)}
                   placeholder="MergeTree"
+                  {...register("engine")}
                 />
               </div>
             </div>
 
             <div className="field">
               <label>Параметры ENGINE(...)</label>
-              <input
-                type="text"
-                placeholder={engineParamsPlaceholder}
-                value={engineParams}
-                onChange={(e) => setEngineParams(e.target.value)}
-              />
+              <input type="text" placeholder={engineParamsPlaceholder} {...register("engineParams")} />
               <p className="ch-hint">
                 Для MergeTree обычно пусто. Для ReplacingMergeTree — колонка версии; для
                 CollapsingMergeTree — sign; для Kafka/NATS — параметры подключения.
@@ -227,57 +246,35 @@ function CreateTableModal({
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.65rem" }}>
               <div className="field">
                 <label>ORDER BY</label>
-                <input
-                  type="text"
-                  placeholder="(ticker, timestamp)"
-                  value={orderBy}
-                  onChange={(e) => setOrderBy(e.target.value)}
-                />
+                <input type="text" placeholder="(ticker, timestamp)" {...register("orderBy")} />
               </div>
               <div className="field">
                 <label>PARTITION BY</label>
-                <input
-                  type="text"
-                  placeholder="toYYYYMM(timestamp)"
-                  value={partitionBy}
-                  onChange={(e) => setPartitionBy(e.target.value)}
-                />
+                <input type="text" placeholder="toYYYYMM(timestamp)" {...register("partitionBy")} />
               </div>
               <div className="field">
                 <label>PRIMARY KEY</label>
                 <input
                   type="text"
                   placeholder="(ticker, timestamp) — если отличается от ORDER BY"
-                  value={primaryKey}
-                  onChange={(e) => setPrimaryKey(e.target.value)}
+                  {...register("primaryKey")}
                 />
               </div>
               <div className="field">
                 <label>SAMPLE BY</label>
-                <input
-                  type="text"
-                  placeholder="intHash64(user_id)"
-                  value={sampleBy}
-                  onChange={(e) => setSampleBy(e.target.value)}
-                />
+                <input type="text" placeholder="intHash64(user_id)" {...register("sampleBy")} />
               </div>
               <div className="field">
                 <label>TTL таблицы</label>
                 <input
                   type="text"
                   placeholder="timestamp + INTERVAL 90 DAY DELETE"
-                  value={tableTtl}
-                  onChange={(e) => setTableTtl(e.target.value)}
+                  {...register("ttl")}
                 />
               </div>
               <div className="field">
                 <label>COMMENT</label>
-                <input
-                  type="text"
-                  placeholder="Описание таблицы"
-                  value={tableComment}
-                  onChange={(e) => setTableComment(e.target.value)}
-                />
+                <input type="text" placeholder="Описание таблицы" {...register("comment")} />
               </div>
             </div>
 
@@ -288,36 +285,34 @@ function CreateTableModal({
                 <button
                   type="button"
                   className="secondary-btn sm"
-                  onClick={() => setTableSettings((prev) => [...prev, { key: "", value: "" }])}
+                  onClick={() => settings.append({ key: "", value: "" })}
                 >
                   + Setting
                 </button>
               </div>
-              {tableSettings.length === 0 ? (
+              {settings.fields.length === 0 ? (
                 <p className="ch-hint">
                   Например: index_granularity=8192, storage_policy=default, allow_nullable_key=1
                 </p>
               ) : (
                 <div className="ch-settings-list">
-                  {tableSettings.map((row, idx) => (
-                    <div key={idx} className="ch-settings-row">
+                  {settings.fields.map((field, idx) => (
+                    <div key={field.id} className="ch-settings-row">
                       <input
                         type="text"
                         list="create-table-mt-settings"
                         placeholder="имя setting"
-                        value={row.key}
-                        onChange={(e) => updateSetting(idx, { key: e.target.value })}
+                        {...register(`settings.${idx}.key`)}
                       />
                       <input
                         type="text"
                         placeholder="значение"
-                        value={row.value}
-                        onChange={(e) => updateSetting(idx, { value: e.target.value })}
+                        {...register(`settings.${idx}.value`)}
                       />
                       <button
                         type="button"
                         className="danger-btn sm"
-                        onClick={() => setTableSettings((prev) => prev.filter((_, i) => i !== idx))}
+                        onClick={() => settings.remove(idx)}
                       >
                         ✕
                       </button>
@@ -334,35 +329,23 @@ function CreateTableModal({
                 <button
                   type="button"
                   className="secondary-btn sm"
-                  onClick={() => setColumnRows((prev) => [...prev, emptyColumnRow()])}
+                  onClick={() => columns.append(emptyColumn())}
                 >
                   + Колонка
                 </button>
               </div>
               <div className="ch-col-grid" style={{ marginTop: "0.35rem" }}>
-                {columnRows.map((row, idx) => (
-                  <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                {columns.fields.map((field, idx) => (
+                  <div key={field.id} style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
                     <div className="ch-col-row">
-                      <input
-                        type="text"
-                        placeholder="имя"
-                        value={row.name}
-                        onChange={(e) => updateColumn(idx, { name: e.target.value })}
-                        required
-                      />
+                      <input type="text" placeholder="имя" {...register(`columns.${idx}.name`)} />
                       <input
                         type="text"
                         list="create-table-types"
                         placeholder="тип"
-                        value={row.type}
-                        onChange={(e) => updateColumn(idx, { type: e.target.value })}
-                        required
+                        {...register(`columns.${idx}.type`)}
                       />
-                      <select
-                        value={row.codec}
-                        onChange={(e) => updateColumn(idx, { codec: e.target.value })}
-                        title="CODEC"
-                      >
+                      <select {...register(`columns.${idx}.codec`)} title="CODEC">
                         <option value="">CODEC…</option>
                         {codecs.map((c) => (
                           <option key={c} value={c}>
@@ -370,22 +353,18 @@ function CreateTableModal({
                           </option>
                         ))}
                       </select>
-                      <select
-                        value={row.default_kind}
-                        onChange={(e) => updateColumn(idx, { default_kind: e.target.value })}
-                        title="DEFAULT kind"
-                      >
+                      <select {...register(`columns.${idx}.default_kind`)} title="DEFAULT kind">
                         {DEFAULT_KIND_OPTIONS.map((k) => (
                           <option key={k || "none"} value={k}>
                             {k || "kind…"}
                           </option>
                         ))}
                       </select>
-                      {columnRows.length > 1 && (
+                      {columns.fields.length > 1 && (
                         <button
                           type="button"
                           className="danger-btn sm"
-                          onClick={() => setColumnRows((prev) => prev.filter((_, i) => i !== idx))}
+                          onClick={() => columns.remove(idx)}
                         >
                           ✕
                         </button>
@@ -395,21 +374,18 @@ function CreateTableModal({
                       <input
                         type="text"
                         placeholder="DEFAULT expression"
-                        value={row.default_expression}
-                        onChange={(e) => updateColumn(idx, { default_expression: e.target.value })}
-                        disabled={!row.default_kind}
+                        disabled={!columnRows?.[idx]?.default_kind}
+                        {...register(`columns.${idx}.default_expression`)}
                       />
                       <input
                         type="text"
                         placeholder="TTL колонки"
-                        value={row.ttl}
-                        onChange={(e) => updateColumn(idx, { ttl: e.target.value })}
+                        {...register(`columns.${idx}.ttl`)}
                       />
                       <input
                         type="text"
                         placeholder="comment"
-                        value={row.comment}
-                        onChange={(e) => updateColumn(idx, { comment: e.target.value })}
+                        {...register(`columns.${idx}.comment`)}
                       />
                     </div>
                   </div>
