@@ -65,6 +65,16 @@ import "../SchedulerPanel/SchedulerPanel.css";
 import { DbConnectionSelect } from "../DbConnectionSelect";
 import "./PostgresManagerPanel.css";
 import PostgresCreateTableModal from "./PostgresCreateTableModal";
+import {
+  AddColumnForm,
+  CreateDbForm,
+  CreateIndexForm,
+  CreateSchemaForm,
+  ModifyColumnForm,
+  RenameColumnForm,
+  RenameTableForm,
+  VacuumForm,
+} from "./PostgresDialogs";
 import { ModalBackdrop as SharedModalBackdrop } from "../common/ModalBackdrop";
 import { useNotify } from "../../notifications";
 
@@ -349,43 +359,10 @@ export default function PostgresManagerPanel() {
   const [sqlResult, setSqlResult] = useState<PgQueryResult | null>(null);
   const [sqlError, setSqlError] = useState("");
 
-  // Modals form state
-  const [dbName, setDbName] = useState("");
-  const [dbOwner, setDbOwner] = useState("");
-  const [dbEncoding, setDbEncoding] = useState("UTF8");
-  const [dbTablespace, setDbTablespace] = useState("");
-
-  const [schemaName, setSchemaName] = useState("");
-  const [schemaOwner, setSchemaOwner] = useState("");
-
+  // Каталоги для формы создания таблицы (сами формы диалогов — на react-hook-form).
   const [tableOptions, setTableOptions] = useState<PgTableOptions | null>(null);
   const [tableOptionsLoading, setTableOptionsLoading] = useState(false);
   const [tableOptionsError, setTableOptionsError] = useState("");
-
-  const [newName, setNewName] = useState("");
-  const [newSchema, setNewSchema] = useState("");
-
-  const [colName, setColName] = useState("");
-  const [colType, setColType] = useState("text");
-  const [colNullable, setColNullable] = useState(true);
-  const [colDefaultExpr, setColDefaultExpr] = useState("");
-  const [colIsIdentity, setColIsIdentity] = useState(false);
-  const [colIdentityGen, setColIdentityGen] = useState("BY DEFAULT");
-  const [colPrimaryKey, setColPrimaryKey] = useState(false);
-  const [colUnique, setColUnique] = useState(false);
-  const [colComment, setColComment] = useState("");
-
-  const [indexName, setIndexName] = useState("");
-  const [indexCols, setIndexCols] = useState<string[]>([]);
-  const [indexMethod, setIndexMethod] = useState("btree");
-  const [indexUnique, setIndexUnique] = useState(false);
-  const [indexConcurrently, setIndexConcurrently] = useState(false);
-  const [indexWhere, setIndexWhere] = useState("");
-  const [indexTablespace, setIndexTablespace] = useState("");
-
-  const [vacuumFull, setVacuumFull] = useState(false);
-  const [vacuumAnalyze, setVacuumAnalyze] = useState(true);
-  const [vacuumFreeze, setVacuumFreeze] = useState(false);
 
   const sqlEditorRef = useRef<HTMLTextAreaElement>(null);
 
@@ -908,13 +885,7 @@ export default function PostgresManagerPanel() {
                 <button
                   type="button"
                   className="primary-btn sm"
-                  onClick={() => {
-                    setDbName("");
-                    setDbOwner("");
-                    setDbEncoding("UTF8");
-                    setDbTablespace("");
-                    setDialog({ kind: "create-db" });
-                  }}
+                  onClick={() => setDialog({ kind: "create-db" })}
                   title="Создать новую базу данных"
                 >
                   + База
@@ -994,11 +965,7 @@ export default function PostgresManagerPanel() {
                   type="button"
                   className="primary-btn sm"
                   disabled={!selectedDb || isSysDb}
-                  onClick={() => {
-                    setSchemaName("");
-                    setSchemaOwner("");
-                    setDialog({ kind: "create-schema" });
-                  }}
+                  onClick={() => setDialog({ kind: "create-schema" })}
                   title="Создать новую схему в выбранной базе"
                 >
                   + Схема
@@ -1241,12 +1208,7 @@ export default function PostgresManagerPanel() {
                             <button
                               type="button"
                               className="secondary-btn sm"
-                              onClick={() => {
-                                setVacuumFull(false);
-                                setVacuumAnalyze(true);
-                                setVacuumFreeze(false);
-                                setDialog({ kind: "vacuum-table" });
-                              }}
+                              onClick={() => setDialog({ kind: "vacuum-table" })}
                               title="Выполнить VACUUM таблицы"
                             >
                               ⚡ Vacuum
@@ -1267,11 +1229,7 @@ export default function PostgresManagerPanel() {
                             <button
                               type="button"
                               className="secondary-btn sm"
-                              onClick={() => {
-                                setNewName(selectedTable.name);
-                                setNewSchema(selectedTable.schema);
-                                setDialog({ kind: "rename-table" });
-                              }}
+                              onClick={() => setDialog({ kind: "rename-table" })}
                               title="Переименовать таблицу или сменить схему"
                             >
                               ✏️ Rename
@@ -1429,17 +1387,7 @@ export default function PostgresManagerPanel() {
                             <button
                               type="button"
                               className="primary-btn sm"
-                              onClick={() => {
-                                setColName("");
-                                setColType("text");
-                                setColNullable(true);
-                                setColDefaultExpr("");
-                                setColIsIdentity(false);
-                                setColPrimaryKey(false);
-                                setColUnique(false);
-                                setColComment("");
-                                setDialog({ kind: "add-column" });
-                              }}
+                              onClick={() => setDialog({ kind: "add-column" })}
                             >
                               + Добавить колонку
                             </button>
@@ -1496,14 +1444,7 @@ export default function PostgresManagerPanel() {
                                         <button
                                           type="button"
                                           className="secondary-btn sm"
-                                          onClick={() => {
-                                            setColName(col.name);
-                                            setColType(col.type);
-                                            setColNullable(col.nullable);
-                                            setColDefaultExpr(col.default_expression);
-                                            setColComment(col.comment);
-                                            setDialog({ kind: "modify-column", column: col });
-                                          }}
+                                          onClick={() => setDialog({ kind: "modify-column", column: col })}
                                           title="Изменить колонку"
                                         >
                                           ✏️
@@ -1511,10 +1452,7 @@ export default function PostgresManagerPanel() {
                                         <button
                                           type="button"
                                           className="secondary-btn sm"
-                                          onClick={() => {
-                                            setNewName(col.name);
-                                            setDialog({ kind: "rename-column", column: col });
-                                          }}
+                                          onClick={() => setDialog({ kind: "rename-column", column: col })}
                                           title="Переименовать колонку"
                                         >
                                           🏷
@@ -1652,13 +1590,6 @@ export default function PostgresManagerPanel() {
                                 type="button"
                                 className="primary-btn sm"
                                 onClick={() => {
-                                  setIndexName("");
-                                  setIndexCols([selectedTable.columns[0]?.name || ""]);
-                                  setIndexMethod("btree");
-                                  setIndexUnique(false);
-                                  setIndexConcurrently(true);
-                                  setIndexWhere("");
-                                  setIndexTablespace("");
                                   setDialog({ kind: "create-index" });
                                   if (!tableOptions) void loadTableOptions();
                                 }}
@@ -2327,142 +2258,44 @@ export default function PostgresManagerPanel() {
 
       {/* 1. Create Database Modal */}
       {dialog?.kind === "create-db" && (
-        <ModalBackdrop onClose={() => setDialog(null)}>
-          <div className="pg-modal-window" onClick={(e) => e.stopPropagation()}>
-            <div className="pg-modal-head">
-              <h3>Создание базы данных PostgreSQL</h3>
-              <button type="button" className="pg-modal-close" onClick={() => setDialog(null)}>
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await createDatabase({
-                    name: dbName,
-                    owner: dbOwner.trim() || undefined,
-                    encoding: dbEncoding.trim() || undefined,
-                    tablespace: dbTablespace.trim() || undefined,
-                    if_not_exists: true,
-                  });
-                  setDialog(null);
-                  await loadDatabases(true);
-                }, `База данных "${dbName}" создана`);
-              }}
-            >
-              <div className="pg-modal-body">
-                <div className="field">
-                  <label>Имя базы данных *</label>
-                  <input
-                    type="text"
-                    required
-                    pattern="^[A-Za-z_][A-Za-z0-9_]*$"
-                    placeholder="app_production"
-                    value={dbName}
-                    onChange={(e) => setDbName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <div className="field">
-                  <label>Владелец (Owner, опционально)</label>
-                  <input
-                    type="text"
-                    placeholder="postgres"
-                    value={dbOwner}
-                    onChange={(e) => setDbOwner(e.target.value)}
-                  />
-                </div>
-                <div className="field">
-                  <label>Кодировка (Encoding)</label>
-                  <select value={dbEncoding} onChange={(e) => setDbEncoding(e.target.value)}>
-                    <option value="UTF8">UTF8 (рекомендуется)</option>
-                    <option value="LATIN1">LATIN1</option>
-                    <option value="WIN1251">WIN1251</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label>Табличное пространство (Tablespace, опционально)</label>
-                  <input
-                    type="text"
-                    placeholder="pg_default"
-                    value={dbTablespace}
-                    onChange={(e) => setDbTablespace(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="pg-modal-foot">
-                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary-btn" disabled={busy || !dbName.trim()}>
-                  {busy ? "Создание..." : "Создать базу"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalBackdrop>
+        <CreateDbForm
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(v) =>
+            run(async () => {
+              await createDatabase({
+                name: v.name,
+                owner: v.owner.trim() || undefined,
+                encoding: v.encoding.trim() || undefined,
+                tablespace: v.tablespace.trim() || undefined,
+                if_not_exists: true,
+              });
+              setDialog(null);
+              await loadDatabases(true);
+            }, `База данных "${v.name}" создана`)
+          }
+        />
       )}
 
       {/* 2. Create Schema Modal */}
       {dialog?.kind === "create-schema" && (
-        <ModalBackdrop onClose={() => setDialog(null)}>
-          <div className="pg-modal-window" onClick={(e) => e.stopPropagation()}>
-            <div className="pg-modal-head">
-              <h3>Создание схемы в базе {selectedDb}</h3>
-              <button type="button" className="pg-modal-close" onClick={() => setDialog(null)}>
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await createSchema({
-                    database: selectedDb,
-                    name: schemaName,
-                    owner: schemaOwner.trim() || undefined,
-                    if_not_exists: true,
-                  });
-                  setDialog(null);
-                  await loadSchemas(selectedDb, true);
-                }, `Схема "${schemaName}" создана`);
-              }}
-            >
-              <div className="pg-modal-body">
-                <div className="field">
-                  <label>Имя схемы *</label>
-                  <input
-                    type="text"
-                    required
-                    pattern="^[A-Za-z_][A-Za-z0-9_]*$"
-                    placeholder="analytics"
-                    value={schemaName}
-                    onChange={(e) => setSchemaName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <div className="field">
-                  <label>Владелец (Owner, опционально)</label>
-                  <input
-                    type="text"
-                    placeholder="postgres"
-                    value={schemaOwner}
-                    onChange={(e) => setSchemaOwner(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="pg-modal-foot">
-                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary-btn" disabled={busy || !schemaName.trim()}>
-                  {busy ? "Создание..." : "Создать схему"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalBackdrop>
+        <CreateSchemaForm
+          busy={busy}
+          database={selectedDb}
+          onClose={() => setDialog(null)}
+          onSubmit={(v) =>
+            run(async () => {
+              await createSchema({
+                database: selectedDb,
+                name: v.name,
+                owner: v.owner.trim() || undefined,
+                if_not_exists: true,
+              });
+              setDialog(null);
+              await loadSchemas(selectedDb, true);
+            }, `Схема "${v.name}" создана`)
+          }
+        />
       )}
 
       {/* 3. Create Table Modal */}
@@ -2491,510 +2324,154 @@ export default function PostgresManagerPanel() {
 
       {/* 4. Add Column Modal */}
       {dialog?.kind === "add-column" && selectedTable && (
-        <ModalBackdrop onClose={() => setDialog(null)}>
-          <div className="pg-modal-window" onClick={(e) => e.stopPropagation()}>
-            <div className="pg-modal-head">
-              <h3>Добавить колонку в {selectedTable.name}</h3>
-              <button type="button" className="pg-modal-close" onClick={() => setDialog(null)}>
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await addColumn({
-                    database: selectedDb,
-                    schema: selectedTable.schema,
-                    table: selectedTable.name,
-                    column: {
-                      name: colName,
-                      type: colType,
-                      nullable: colPrimaryKey ? false : colNullable,
-                      default_expression: colDefaultExpr.trim() || undefined,
-                      is_identity: colIsIdentity || undefined,
-                      identity_generation: colIsIdentity ? colIdentityGen : undefined,
-                      primary_key: colPrimaryKey || undefined,
-                      unique: colUnique || undefined,
-                      comment: colComment.trim() || undefined,
-                    },
-                    if_not_exists: true,
-                  });
-                  setDialog(null);
-                  await loadTableDetail(selectedDb, selectedTable.schema, selectedTable.name);
-                }, `Колонка "${colName}" добавлена`);
-              }}
-            >
-              <div className="pg-modal-body">
-                <div className="field">
-                  <label>Имя колонки *</label>
-                  <input
-                    type="text"
-                    required
-                    pattern="^[A-Za-z_][A-Za-z0-9_]*$"
-                    placeholder="status"
-                    value={colName}
-                    onChange={(e) => setColName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <div className="field">
-                  <label>Тип данных *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="text, bigint, jsonb..."
-                    value={colType}
-                    onChange={(e) => setColType(e.target.value)}
-                  />
-                </div>
-                <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.8rem", cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={colNullable}
-                      disabled={colPrimaryKey}
-                      onChange={(e) => setColNullable(e.target.checked)}
-                    />
-                    Nullable (NULL)
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.8rem", cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={colPrimaryKey}
-                      onChange={(e) => {
-                        setColPrimaryKey(e.target.checked);
-                        if (e.target.checked) setColNullable(false);
-                      }}
-                    />
-                    PRIMARY KEY
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.8rem", cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={colUnique}
-                      onChange={(e) => setColUnique(e.target.checked)}
-                    />
-                    UNIQUE
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.8rem", cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={colIsIdentity}
-                      onChange={(e) => setColIsIdentity(e.target.checked)}
-                    />
-                    IDENTITY
-                  </label>
-                  {colIsIdentity && (
-                    <select
-                      value={colIdentityGen}
-                      onChange={(e) => setColIdentityGen(e.target.value)}
-                      style={{ fontSize: "0.8rem", padding: "0.15rem 0.35rem" }}
-                    >
-                      <option value="BY DEFAULT">BY DEFAULT</option>
-                      <option value="ALWAYS">ALWAYS</option>
-                    </select>
-                  )}
-                </div>
-                <div className="field">
-                  <label>Значение по умолчанию (DEFAULT expression)</label>
-                  <input
-                    type="text"
-                    placeholder="now(), 'pending', 0"
-                    value={colDefaultExpr}
-                    onChange={(e) => setColDefaultExpr(e.target.value)}
-                  />
-                </div>
-                <div className="field">
-                  <label>Комментарий (COMMENT)</label>
-                  <input
-                    type="text"
-                    placeholder="Описание колонки"
-                    value={colComment}
-                    onChange={(e) => setColComment(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="pg-modal-foot">
-                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary-btn" disabled={busy || !colName.trim()}>
-                  {busy ? "Добавление..." : "Добавить колонку"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalBackdrop>
+        <AddColumnForm
+          busy={busy}
+          tableName={selectedTable.name}
+          onClose={() => setDialog(null)}
+          onSubmit={(v) =>
+            run(async () => {
+              await addColumn({
+                database: selectedDb,
+                schema: selectedTable.schema,
+                table: selectedTable.name,
+                column: {
+                  name: v.name,
+                  type: v.type,
+                  nullable: v.primary_key ? false : v.nullable,
+                  default_expression: v.default_expression.trim() || undefined,
+                  is_identity: v.is_identity || undefined,
+                  identity_generation: v.is_identity ? v.identity_generation : undefined,
+                  primary_key: v.primary_key || undefined,
+                  unique: v.unique || undefined,
+                  comment: v.comment.trim() || undefined,
+                },
+                if_not_exists: true,
+              });
+              setDialog(null);
+              await loadTableDetail(selectedDb, selectedTable.schema, selectedTable.name);
+            }, `Колонка "${v.name}" добавлена`)
+          }
+        />
       )}
 
       {/* 5. Modify Column Modal */}
       {dialog?.kind === "modify-column" && selectedTable && (
-        <ModalBackdrop onClose={() => setDialog(null)}>
-          <div className="pg-modal-window" onClick={(e) => e.stopPropagation()}>
-            <div className="pg-modal-head">
-              <h3>Изменить колонку {dialog.column.name}</h3>
-              <button type="button" className="pg-modal-close" onClick={() => setDialog(null)}>
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await modifyColumn(selectedDb, selectedTable.schema, selectedTable.name, {
-                    name: dialog.column.name,
-                    type: colType,
-                    nullable: colNullable,
-                    default_expression: colDefaultExpr.trim() || undefined,
-                    comment: colComment.trim() || undefined,
-                  });
-                  setDialog(null);
-                  await loadTableDetail(selectedDb, selectedTable.schema, selectedTable.name);
-                }, `Колонка "${dialog.column.name}" изменена`);
-              }}
-            >
-              <div className="pg-modal-body">
-                <div className="field">
-                  <label>Тип данных *</label>
-                  <input
-                    type="text"
-                    required
-                    value={colType}
-                    onChange={(e) => setColType(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.8rem", cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
-                    checked={colNullable}
-                    onChange={(e) => setColNullable(e.target.checked)}
-                  />
-                  Nullable (NULL)
-                </label>
-                <div className="field">
-                  <label>Значение по умолчанию (DEFAULT expression)</label>
-                  <input
-                    type="text"
-                    value={colDefaultExpr}
-                    onChange={(e) => setColDefaultExpr(e.target.value)}
-                  />
-                </div>
-                <div className="field">
-                  <label>Комментарий</label>
-                  <input
-                    type="text"
-                    value={colComment}
-                    onChange={(e) => setColComment(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="pg-modal-foot">
-                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary-btn" disabled={busy || !colType.trim()}>
-                  {busy ? "Сохранение..." : "Сохранить изменения"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalBackdrop>
+        <ModifyColumnForm
+          busy={busy}
+          column={dialog.column}
+          onClose={() => setDialog(null)}
+          onSubmit={(v) => {
+            const colName = dialog.column.name;
+            run(async () => {
+              await modifyColumn(selectedDb, selectedTable.schema, selectedTable.name, {
+                name: colName,
+                type: v.type,
+                nullable: v.nullable,
+                default_expression: v.default_expression.trim() || undefined,
+                comment: v.comment.trim() || undefined,
+              });
+              setDialog(null);
+              await loadTableDetail(selectedDb, selectedTable.schema, selectedTable.name);
+            }, `Колонка "${colName}" изменена`);
+          }}
+        />
       )}
 
       {/* 6. Rename Column Modal */}
       {dialog?.kind === "rename-column" && selectedTable && (
-        <ModalBackdrop onClose={() => setDialog(null)}>
-          <div className="pg-modal-window" onClick={(e) => e.stopPropagation()}>
-            <div className="pg-modal-head">
-              <h3>Переименовать колонку {dialog.column.name}</h3>
-              <button type="button" className="pg-modal-close" onClick={() => setDialog(null)}>
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await renameColumn(
-                    selectedDb,
-                    selectedTable.schema,
-                    selectedTable.name,
-                    dialog.column.name,
-                    newName,
-                  );
-                  setDialog(null);
-                  await loadTableDetail(selectedDb, selectedTable.schema, selectedTable.name);
-                }, `Колонка переименована в "${newName}"`);
-              }}
-            >
-              <div className="pg-modal-body">
-                <div className="field">
-                  <label>Новое имя колонки *</label>
-                  <input
-                    type="text"
-                    required
-                    pattern="^[A-Za-z_][A-Za-z0-9_]*$"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-              </div>
-              <div className="pg-modal-foot">
-                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary-btn" disabled={busy || !newName.trim()}>
-                  {busy ? "Переименование..." : "Переименовать"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalBackdrop>
+        <RenameColumnForm
+          busy={busy}
+          columnName={dialog.column.name}
+          onClose={() => setDialog(null)}
+          onSubmit={(name) => {
+            const oldName = dialog.column.name;
+            run(async () => {
+              await renameColumn(
+                selectedDb,
+                selectedTable.schema,
+                selectedTable.name,
+                oldName,
+                name,
+              );
+              setDialog(null);
+              await loadTableDetail(selectedDb, selectedTable.schema, selectedTable.name);
+            }, `Колонка переименована в "${name}"`);
+          }}
+        />
       )}
 
       {/* 7. Rename Table Modal */}
       {dialog?.kind === "rename-table" && selectedTable && (
-        <ModalBackdrop onClose={() => setDialog(null)}>
-          <div className="pg-modal-window" onClick={(e) => e.stopPropagation()}>
-            <div className="pg-modal-head">
-              <h3>Переименовать таблицу {selectedTable.name}</h3>
-              <button type="button" className="pg-modal-close" onClick={() => setDialog(null)}>
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await renameTable({
-                    database: selectedDb,
-                    schema: selectedTable.schema,
-                    name: selectedTable.name,
-                    new_schema: newSchema.trim() || undefined,
-                    new_name: newName.trim(),
-                  });
-                  setDialog(null);
-                  await loadTables(selectedDb, newSchema.trim() || selectedSchema, true);
-                }, `Таблица переименована в "${newName}"`);
-              }}
-            >
-              <div className="pg-modal-body">
-                <div className="field">
-                  <label>Новое имя таблицы *</label>
-                  <input
-                    type="text"
-                    required
-                    pattern="^[A-Za-z_][A-Za-z0-9_]*$"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <div className="field">
-                  <label>Переместить в схему (опционально)</label>
-                  <input
-                    type="text"
-                    placeholder={selectedTable.schema}
-                    value={newSchema}
-                    onChange={(e) => setNewSchema(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="pg-modal-foot">
-                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary-btn" disabled={busy || !newName.trim()}>
-                  {busy ? "Переименование..." : "Переименовать"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalBackdrop>
+        <RenameTableForm
+          busy={busy}
+          tableName={selectedTable.name}
+          currentSchema={selectedTable.schema}
+          onClose={() => setDialog(null)}
+          onSubmit={(v) =>
+            run(async () => {
+              await renameTable({
+                database: selectedDb,
+                schema: selectedTable.schema,
+                name: selectedTable.name,
+                new_schema: v.schema.trim() || undefined,
+                new_name: v.name.trim(),
+              });
+              setDialog(null);
+              await loadTables(selectedDb, v.schema.trim() || selectedSchema, true);
+            }, `Таблица переименована в "${v.name}"`)
+          }
+        />
       )}
 
       {/* 8. Vacuum Table Modal */}
       {dialog?.kind === "vacuum-table" && selectedTable && (
-        <ModalBackdrop onClose={() => setDialog(null)}>
-          <div className="pg-modal-window" onClick={(e) => e.stopPropagation()}>
-            <div className="pg-modal-head">
-              <h3>VACUUM таблицы {selectedTable.name}</h3>
-              <button type="button" className="pg-modal-close" onClick={() => setDialog(null)}>
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await vacuumTable({
-                    database: selectedDb,
-                    schema: selectedTable.schema,
-                    name: selectedTable.name,
-                    full: vacuumFull,
-                    analyze: vacuumAnalyze,
-                    freeze: vacuumFreeze,
-                  });
-                  setDialog(null);
-                  await loadTableDetail(selectedDb, selectedTable.schema, selectedTable.name);
-                }, `VACUUM для "${selectedTable.name}" успешно выполнен`);
-              }}
-            >
-              <div className="pg-modal-body">
-                <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontSize: "0.85rem" }}>
-                  <input
-                    type="checkbox"
-                    checked={vacuumAnalyze}
-                    onChange={(e) => setVacuumAnalyze(e.target.checked)}
-                  />
-                  <strong>ANALYZE</strong> (обновить статистику для планировщика)
-                </label>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontSize: "0.85rem" }}>
-                  <input
-                    type="checkbox"
-                    checked={vacuumFull}
-                    onChange={(e) => setVacuumFull(e.target.checked)}
-                  />
-                  <strong>FULL</strong> (полная перезапись таблицы и сжатие, требует эксклюзивной блокировки)
-                </label>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontSize: "0.85rem" }}>
-                  <input
-                    type="checkbox"
-                    checked={vacuumFreeze}
-                    onChange={(e) => setVacuumFreeze(e.target.checked)}
-                  />
-                  <strong>FREEZE</strong> (заморозка старых транзакций XID)
-                </label>
-              </div>
-              <div className="pg-modal-foot">
-                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary-btn" disabled={busy}>
-                  {busy ? "Выполнение..." : "Запустить VACUUM"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalBackdrop>
+        <VacuumForm
+          busy={busy}
+          tableName={selectedTable.name}
+          onClose={() => setDialog(null)}
+          onSubmit={(v) =>
+            run(async () => {
+              await vacuumTable({
+                database: selectedDb,
+                schema: selectedTable.schema,
+                name: selectedTable.name,
+                full: v.full,
+                analyze: v.analyze,
+                freeze: v.freeze,
+              });
+              setDialog(null);
+              await loadTableDetail(selectedDb, selectedTable.schema, selectedTable.name);
+            }, `VACUUM для "${selectedTable.name}" успешно выполнен`)
+          }
+        />
       )}
 
       {/* 9. Create Index Modal */}
       {dialog?.kind === "create-index" && selectedTable && (
-        <ModalBackdrop onClose={() => setDialog(null)}>
-          <div className="pg-modal-window is-large" onClick={(e) => e.stopPropagation()}>
-            <div className="pg-modal-head">
-              <h3>Создание индекса для {selectedTable.name}</h3>
-              <button type="button" className="pg-modal-close" onClick={() => setDialog(null)}>
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await createIndex({
-                    database: selectedDb,
-                    schema: selectedTable.schema,
-                    table: selectedTable.name,
-                    name: indexName.trim(),
-                    columns: indexCols.filter(Boolean),
-                    method: indexMethod,
-                    unique: indexUnique,
-                    concurrently: indexConcurrently,
-                    where: indexWhere.trim() || undefined,
-                    tablespace: indexTablespace.trim() || undefined,
-                    if_not_exists: true,
-                  });
-                  setDialog(null);
-                  await loadIndexes(selectedDb, selectedTable.schema, selectedTable.name);
-                }, `Индекс "${indexName}" успешно создан`);
-              }}
-            >
-              <div className="pg-modal-body">
-                <div className="field">
-                  <label>Имя индекса *</label>
-                  <input
-                    type="text"
-                    required
-                    pattern="^[A-Za-z_][A-Za-z0-9_]*$"
-                    placeholder={`idx_${selectedTable.name}_col`}
-                    value={indexName}
-                    onChange={(e) => setIndexName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.65rem" }}>
-                  <div className="field">
-                    <label>Метод индексирования *</label>
-                    <select value={indexMethod} onChange={(e) => setIndexMethod(e.target.value)}>
-                      <option value="btree">btree (по умолчанию)</option>
-                      <option value="hash">hash</option>
-                      <option value="gin">gin (для JSONB, массивов, FTS)</option>
-                      <option value="gist">gist (для гео, диапазонов, ltree)</option>
-                      <option value="brin">brin (для больших упорядоченных таблиц)</option>
-                      <option value="spgist">spgist</option>
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label>Колонка(и) для индекса</label>
-                    <select
-                      value={indexCols[0] || ""}
-                      onChange={(e) => setIndexCols([e.target.value])}
-                    >
-                      {selectedTable.columns.map((c) => (
-                        <option key={c.name} value={c.name}>
-                          {c.name} ({c.type})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", gap: "1.5rem", alignItems: "center" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.82rem", cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={indexUnique}
-                      onChange={(e) => setIndexUnique(e.target.checked)}
-                    />
-                    <strong>UNIQUE</strong> (уникальный индекс)
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.82rem", cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={indexConcurrently}
-                      onChange={(e) => setIndexConcurrently(e.target.checked)}
-                    />
-                    <strong>CONCURRENTLY</strong> (без блокировки на запись)
-                  </label>
-                </div>
-
-                <div className="field">
-                  <label>Условие частичного индекса (WHERE, опционально)</label>
-                  <input
-                    type="text"
-                    placeholder="status = 'active' AND deleted_at IS NULL"
-                    value={indexWhere}
-                    onChange={(e) => setIndexWhere(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="pg-modal-foot">
-                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary-btn" disabled={busy || !indexName.trim()}>
-                  {busy ? "Создание..." : "Создать индекс"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalBackdrop>
+        <CreateIndexForm
+          busy={busy}
+          tableName={selectedTable.name}
+          columns={selectedTable.columns}
+          onClose={() => setDialog(null)}
+          onSubmit={(v) =>
+            run(async () => {
+              await createIndex({
+                database: selectedDb,
+                schema: selectedTable.schema,
+                table: selectedTable.name,
+                name: v.name.trim(),
+                columns: [v.column].filter(Boolean),
+                method: v.method,
+                unique: v.unique,
+                concurrently: v.concurrently,
+                where: v.where.trim() || undefined,
+                if_not_exists: true,
+              });
+              setDialog(null);
+              await loadIndexes(selectedDb, selectedTable.schema, selectedTable.name);
+            }, `Индекс "${v.name}" успешно создан`)
+          }
+        />
       )}
 
       {/* 10. Confirm Danger Dialog */}
