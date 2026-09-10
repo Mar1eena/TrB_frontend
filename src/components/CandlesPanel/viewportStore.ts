@@ -1,6 +1,7 @@
 import {
   fetchHistoricCandles,
   intervalMeta,
+  MAX_RENDERED_CANDLES,
   pageSizeForVisible,
   prefetchForVisible,
   type CandleBar,
@@ -8,6 +9,7 @@ import {
 
 export type HistoryMeta = {
   firstLoad: boolean;
+  /** Сдвиг видимого логического диапазона в барах (может быть отрицательным). */
   prepended: number;
   visibleCount: number;
 };
@@ -58,6 +60,13 @@ export class CandleViewportStore {
   private settleUntil = 0;
   private destroyed = false;
 
+  // Кеш отсортированного массива (полный набор всех загруженных баров).
+  private sortedCache: CandleBar[] | null = null;
+  // Индекс (в полном наборе) первого бара, отданного в график, и длина окна.
+  private renderStartIdx = 0;
+  private renderedLen = 0;
+  private lastRange: LogicalRangeLike | null = null;
+
   private readonly cb: StoreCallbacks;
 
   constructor(cb: StoreCallbacks) {
@@ -71,6 +80,10 @@ export class CandleViewportStore {
     this.boundsMin = bounds?.fromSec ?? null;
     this.boundsMax = bounds?.toSec ?? null;
     this.bars.clear();
+    this.sortedCache = null;
+    this.renderStartIdx = 0;
+    this.renderedLen = 0;
+    this.lastRange = null;
     this.leftBusy = false;
     this.rightBusy = false;
     this.leftExhausted = false;
@@ -90,7 +103,43 @@ export class CandleViewportStore {
   }
 
   getSorted(): CandleBar[] {
-    return [...this.bars.values()].sort((a, b) => (a.time as number) - (b.time as number));
+    if (!this.sortedCache) {
+      this.sortedCache = [...this.bars.values()].sort(
+        (a, b) => (a.time as number) - (b.time as number),
+      );
+    }
+    return this.sortedCache;
+  }
+
+  /**
+   * Собирает набор для отрисовки: если полный кеш больше MAX_RENDERED_CANDLES —
+   * окно вокруг `centerFullIdx`, иначе весь набор. Возвращает сдвиг видимого
+   * логического диапазона (в барах), нужный чтобы график остался на тех же свечах.
+   */
+  private buildEmit(centerFullIdx: number): { bars: CandleBar[]; shift: number } {
+    const all = this.getSorted();
+    const n = all.length;
+    const prevStart = this.renderStartIdx;
+    if (n <= MAX_RENDERED_CANDLES) {
+      this.renderStartIdx = 0;
+      this.renderedLen = n;
+      return { bars: all, shift: prevStart };
+    }
+    const half = Math.floor(MAX_RENDERED_CANDLES / 2);
+    const lo = Math.max(0, Math.min(centerFullIdx - half, n - MAX_RENDERED_CANDLES));
+    const slice = all.slice(lo, lo + MAX_RENDERED_CANDLES);
+    this.renderStartIdx = lo;
+    this.renderedLen = slice.length;
+    return { bars: slice, shift: prevStart - lo };
+  }
+
+  /** Центр видимого окна в индексах полного набора (учёт сдвига окна). */
+  private visibleCenterFullIdx(prependedToFull = 0): number {
+    const r = this.lastRange;
+    const mid = r
+      ? (r.from + r.to) / 2
+      : Math.max(0, this.renderedLen - 1 - this.visibleCount / 2);
+    return Math.round(this.renderStartIdx + prependedToFull + mid);
   }
 
   lastBar(): CandleBar | null {
@@ -130,14 +179,38 @@ export class CandleViewportStore {
     if (Date.now() < this.settleUntil) return;
     const gen = this.gen;
     const bars = this.getSorted();
-    const fromIdx = range?.from ?? 0;
-    const toIdx = range?.to ?? bars.length - 1;
-    this.visibleCount = Math.max(1, Math.ceil(toIdx - fromIdx));
+    this.lastRange = range;
     const n = bars.length;
-    const leftRemain = fromIdx;
-    const rightRemain = n - 1 - toIdx;
+    // range приходит в логических индексах отрисованного окна — переводим в
+    // индексы полного набора (учёт сдвига окна renderStartIdx).
+    const winFrom = range?.from ?? 0;
+    const winTo = range?.to ?? this.renderedLen - 1;
+    const fromIdx = this.renderStartIdx + winFrom;
+    const toIdx = this.renderStartIdx + winTo;
+    this.visibleCount = Math.max(1, Math.ceil(winTo - winFrom));
+    const leftRemain = Math.max(0, fromIdx);
+    const rightRemain = Math.max(0, n - 1 - toIdx);
     const now = Date.now();
     const prefetch = this.prefetch();
+
+    // Прокрутка внутри уже загруженных данных, но к краю отрисованного окна —
+    // переотдаём окно из кеша (без запроса, без спиннера).
+    if (n > MAX_RENDERED_CANDLES) {
+      const nearWinLeft = this.renderStartIdx > 0 && winFrom <= prefetch;
+      const nearWinRight =
+        this.renderStartIdx + this.renderedLen < n &&
+        this.renderedLen - 1 - winTo <= prefetch;
+      if (nearWinLeft || nearWinRight) {
+        const emit = this.buildEmit(this.visibleCenterFullIdx());
+        if (emit.shift !== 0 || emit.bars.length !== this.renderedLen) {
+          this.cb.onHistory(emit.bars, {
+            firstLoad: false,
+            prepended: emit.shift,
+            visibleCount: this.visibleCount,
+          });
+        }
+      }
+    }
 
     if (leftRemain <= prefetch && !this.leftBusy && !this.leftExhausted && now >= this.leftFailUntil) {
       await this.fetchPage("left", gen, false);
@@ -209,6 +282,7 @@ export class CandleViewportStore {
         if (!this.bars.has(t)) added += 1;
         this.bars.set(t, bar);
       }
+      if (added > 0) this.sortedCache = null;
 
       if (fetched.length === 0 || added === 0 || fetched.length < limit) {
         if (dir === "left") this.leftExhausted = true;
@@ -223,10 +297,10 @@ export class CandleViewportStore {
 
       const bars = this.getSorted();
       const nextFirst = this.minTime();
-      let prepended = 0;
+      let prependedToFull = 0;
       if (prevFirst != null && nextFirst != null && nextFirst < prevFirst) {
         for (const bar of bars) {
-          if ((bar.time as number) < prevFirst) prepended += 1;
+          if ((bar.time as number) < prevFirst) prependedToFull += 1;
           else break;
         }
       }
@@ -234,12 +308,17 @@ export class CandleViewportStore {
       if (wasFirst) {
         this.settleUntil = Date.now() + INITIAL_SETTLE_MS;
       }
-      this.cb.onHistory(bars, {
+      // Отдаём окно вокруг видимого диапазона; полный набор остаётся в кеше.
+      const emit = wasFirst
+        ? this.buildEmit(bars.length - 1)
+        : this.buildEmit(this.visibleCenterFullIdx(prependedToFull));
+      const shift = wasFirst ? prependedToFull : emit.shift + prependedToFull;
+      this.cb.onHistory(emit.bars, {
         firstLoad: wasFirst,
-        prepended,
+        prepended: shift,
         visibleCount: this.visibleCount,
       });
-      if (firstLoad && bars.length === 0) {
+      if (firstLoad && emit.bars.length === 0) {
         this.cb.onError(new Error("Нет свечей за выбранный период"));
       }
     } catch (err) {

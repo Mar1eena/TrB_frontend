@@ -581,6 +581,20 @@
   border-radius: 0.5rem;
 }
 
+/* Виртуализированная таблица сделок: зебра по индексу строки, а не nth-child
+   (padding-строки виртуализатора сбивают чётность). */
+.strategy-trades-table tbody tr:nth-child(even) {
+  background: transparent;
+}
+
+.strategy-trades-table tbody tr.is-alt {
+  background: rgba(28, 23, 48, 0.5);
+}
+
+.strategy-trades-table tbody td {
+  vertical-align: middle;
+}
+
 .strategy-space-row {
   gap: 0.75rem;
   flex-wrap: wrap;

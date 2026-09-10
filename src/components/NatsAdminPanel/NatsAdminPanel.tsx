@@ -55,6 +55,7 @@ import "../../styles/tables.css";
 import "../SchedulerPanel/SchedulerPanel.css";
 import "./NatsAdminPanel.css";
 import { useNotify } from "../../notifications";
+import { useOverlayClose } from "../../hooks/useOverlayClose";
 
 type MainTab = "explorer" | "publish" | "system";
 type StreamDetailTab = "overview" | "config" | "consumers" | "messages" | "json";
@@ -810,8 +811,9 @@ function previewText(value: string, max = 80): string {
 }
 
 function ModalBackdrop({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const overlay = useOverlayClose(onClose);
   return (
-    <div className="nats-modal-backdrop" onClick={onClose}>
+    <div className="nats-modal-backdrop" {...overlay}>
       {children}
     </div>
   );

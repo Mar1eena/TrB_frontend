@@ -12,6 +12,12 @@ import {
 export const PAGE_CANDLES = 500;
 export const PREFETCH_CANDLES = 100;
 export const MAX_PAGE_CANDLES = 4000;
+/**
+ * Максимум свечей, одновременно отданных в lightweight-charts. Всё, что за
+ * пределами окна вокруг видимого диапазона, остаётся только в кеше
+ * CandleViewportStore и возвращается в серию при обратной прокрутке.
+ */
+export const MAX_RENDERED_CANDLES = 6000;
 
 /** Порог догрузки: не меньше 100 и не меньше одного видимого экрана. */
 export function prefetchForVisible(visibleCount: number): number {

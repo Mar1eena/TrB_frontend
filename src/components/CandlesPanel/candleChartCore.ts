@@ -130,7 +130,7 @@ export function wireCandleViewport(params: {
           from: Math.max(-0.5, n - visible - 0.5),
           to: n + 2,
         });
-      } else if (meta.prepended > 0 && logical) {
+      } else if (meta.prepended !== 0 && logical) {
         chart.timeScale().setVisibleLogicalRange({
           from: logical.from + meta.prepended,
           to: logical.to + meta.prepended,

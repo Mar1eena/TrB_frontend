@@ -2,6 +2,7 @@
 // Внешний вид повторяет модалки панели стратегий (.strategy-modal).
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useOverlayClose } from "../../hooks/useOverlayClose";
 
 function useEscape(onCancel: () => void) {
   useEffect(() => {
@@ -31,11 +32,11 @@ export function ConfirmDialog({
   onCancel: () => void;
 }) {
   useEscape(onCancel);
+  const overlay = useOverlayClose(onCancel);
   return (
-    <div className="strategy-modal-overlay" onClick={onCancel}>
+    <div className="strategy-modal-overlay" {...overlay}>
       <div
         className="strategy-modal strategy-confirm"
-        onClick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
       >
@@ -88,6 +89,7 @@ export function PromptDialog({
   const [value, setValue] = useState(defaultValue);
   const ref = useRef<HTMLInputElement>(null);
   useEscape(onCancel);
+  const overlay = useOverlayClose(onCancel);
   useEffect(() => {
     ref.current?.focus();
     ref.current?.select();
@@ -99,10 +101,9 @@ export function PromptDialog({
   };
 
   return (
-    <div className="strategy-modal-overlay" onClick={onCancel}>
+    <div className="strategy-modal-overlay" {...overlay}>
       <div
         className="strategy-modal strategy-confirm"
-        onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >

@@ -1,8 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  LineSeries,
   createSeriesMarkers,
-  type IChartApi,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type SeriesMarker,
@@ -10,7 +8,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { CandleBar } from "../../api/tinvest/candles";
-import type { BacktestConfig, BacktestIndicatorSeries, TradeRecord } from "../../api/strategy";
+import type { BacktestConfig, TradeRecord } from "../../api/strategy";
 import {
   createCandleChart,
   createCandleSeriesPair,
@@ -18,14 +16,6 @@ import {
   wireCandleViewport,
 } from "../CandlesPanel/candleChartCore";
 import { CandleViewportStore } from "../CandlesPanel/viewportStore";
-
-const OSCILLATORS = new Set([
-  "rsi", "macd", "macdext", "macdfix", "stoch", "stochf", "stochrsi", "cci", "cmo",
-  "mfi", "willr", "adx", "adxr", "aroon", "aroonosc", "roc", "rocp", "mom", "trix",
-  "ultosc", "atr", "natr", "dx", "ppo", "apo", "bop",
-]);
-
-const PALETTE = ["#8b5cf6", "#3b82f6", "#f59e0b", "#10b981", "#ec4899", "#06b6d4", "#e11d48"];
 
 function toSec(iso: string): number {
   return Math.floor(Date.parse(iso) / 1000);
@@ -48,42 +38,8 @@ function nearestBarTime(times: number[], target: number): number | null {
   return target - before <= after - target ? before : after;
 }
 
-function indicatorLabel(s: BacktestIndicatorSeries): string {
-  return s.indicator ? s.indicator.toUpperCase() : s.indicatorId;
-}
-
-/** Рисует один индикатор из результата бэктеста (уже посчитанные значения). */
-function drawIndicator(
-  chart: IChartApi,
-  s: BacktestIndicatorSeries,
-  color: string,
-  paneIndex: number,
-): ISeriesApi<"Line"> | null {
-  const data = s.points
-    .map((p) => ({
-      time: Math.floor(Date.parse(p.time) / 1000) as UTCTimestamp,
-      value: p.values.value ?? Object.values(p.values)[0],
-    }))
-    .filter((d) => Number.isFinite(d.time) && Number.isFinite(d.value as number))
-    .sort((a, b) => (a.time as number) - (b.time as number));
-  if (data.length === 0) return null;
-
-  const line = chart.addSeries(
-    LineSeries,
-    {
-      color,
-      lineWidth: 2,
-      priceScaleId: "right",
-      priceLineVisible: false,
-      lastValueVisible: false,
-    },
-    paneIndex,
-  );
-  line.setData(data.map((d) => ({ time: d.time as Time, value: d.value as number })));
-  return line;
-}
-
 type MarkerSeed = {
+  timeSec: number;
   time: Time;
   position: "aboveBar" | "belowBar";
   color: string;
@@ -92,14 +48,46 @@ type MarkerSeed = {
   short: string;
 };
 
+/** Максимум маркеров, одновременно отданных в lightweight-charts. */
+const MAX_MARKERS = 600;
+
+/** Индекс первого seed со временем >= t (seeds отсортированы по timeSec). */
+function lowerBoundByTime(seeds: MarkerSeed[], t: number): number {
+  let lo = 0;
+  let hi = seeds.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (seeds[mid].timeSec < t) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** Равномерное прореживание до не более `max` элементов. */
+function decimate<T>(arr: T[], max: number): T[] {
+  if (arr.length <= max) return arr;
+  const step = arr.length / max;
+  const out: T[] = [];
+  for (let i = 0; i < arr.length; i += step) out.push(arr[Math.floor(i)]);
+  return out;
+}
+
 /** Маркеры сделок, привязанные к ближайшим по времени загруженным свечам. */
 function buildMarkerSeeds(trades: TradeRecord[], times: number[]): MarkerSeed[] {
   const seeds: MarkerSeed[] = [];
+  if (times.length === 0) return seeds;
+  const firstT = times[0];
+  const lastT = times[times.length - 1];
   for (const tr of trades) {
-    const entry = nearestBarTime(times, toSec(tr.entryTime));
-    const exit = nearestBarTime(times, toSec(tr.exitTime));
+    const eSec = toSec(tr.entryTime);
+    const xSec = toSec(tr.exitTime);
+    // Только сделки в пределах загруженного/отрисованного окна свечей —
+    // остальные снапнулись бы в кучу на краю и тормозили бы график.
+    const entry = eSec >= firstT && eSec <= lastT ? nearestBarTime(times, eSec) : null;
+    const exit = xSec >= firstT && xSec <= lastT ? nearestBarTime(times, xSec) : null;
     if (entry != null) {
       seeds.push({
+        timeSec: entry,
         time: entry as UTCTimestamp as Time,
         position: "belowBar",
         color: tr.isLong ? "#3dba7a" : "#e0a13d",
@@ -110,6 +98,7 @@ function buildMarkerSeeds(trades: TradeRecord[], times: number[]): MarkerSeed[] 
     }
     if (exit != null) {
       seeds.push({
+        timeSec: exit,
         time: exit as UTCTimestamp as Time,
         position: "aboveBar",
         color: tr.pnl >= 0 ? "#7fd6a3" : "#e0637d",
@@ -119,25 +108,21 @@ function buildMarkerSeeds(trades: TradeRecord[], times: number[]): MarkerSeed[] 
       });
     }
   }
-  seeds.sort((a, b) => (a.time as number) - (b.time as number));
+  seeds.sort((a, b) => a.timeSec - b.timeSec);
   return seeds;
 }
 
 export default function PriceChart({
   config,
-  indicators = [],
   trades,
 }: {
   config: BacktestConfig;
-  indicators?: BacktestIndicatorSeries[];
   trades: TradeRecord[];
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const storeRef = useRef<CandleViewportStore | null>(null);
-  const indicatorSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const markersApiRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const seedsRef = useRef<MarkerSeed[]>([]);
   const tradesRef = useRef(trades);
@@ -153,11 +138,6 @@ export default function PriceChart({
     const wins = trades.filter((t) => t.pnl >= 0).length;
     return { wins, losses: trades.length - wins };
   }, [trades]);
-
-  const indicatorsKey = useMemo(
-    () => indicators.map((s) => `${s.indicatorId}:${s.points.length}`).join("|"),
-    [indicators],
-  );
 
   // Создаём график один раз: та же логика отображения (постепенная подгрузка +
   // масштабирование), что и на панели "Свечи".
@@ -176,11 +156,30 @@ export default function PriceChart({
     const applyMarkerScale = () => {
       const markersApi = markersApiRef.current;
       if (!markersApi) return;
+      const seeds = seedsRef.current;
       const px = chart.timeScale().options().barSpacing ?? 6;
       const size = px >= 14 ? 2 : px >= 9 ? 1.5 : px >= 5 ? 1 : px >= 2.5 ? 0.6 : 0.35;
       const label: "full" | "short" | "none" = px >= 12 ? "full" : px >= 7 ? "short" : "none";
+
+      // В график отдаём только маркеры видимого диапазона (+ запас в один экран),
+      // с прореживанием — иначе тысячи сделок кладут прокрутку графика.
+      let slice = seeds;
+      if (seeds.length > MAX_MARKERS) {
+        const vr = chart.timeScale().getVisibleRange();
+        if (vr) {
+          const from = vr.from as number;
+          const to = vr.to as number;
+          const pad = Math.max(1, to - from);
+          slice = seeds.slice(
+            lowerBoundByTime(seeds, from - pad),
+            lowerBoundByTime(seeds, to + pad),
+          );
+        }
+        slice = decimate(slice, MAX_MARKERS);
+      }
+
       markersApi.setMarkers(
-        seedsRef.current.map(
+        slice.map(
           (s) =>
             ({
               time: s.time,
@@ -194,6 +193,15 @@ export default function PriceChart({
       );
     };
 
+    let markerRaf = 0;
+    const scheduleMarkerScale = () => {
+      if (markerRaf) return;
+      markerRaf = requestAnimationFrame(() => {
+        markerRaf = 0;
+        applyMarkerScale();
+      });
+    };
+
     const applyMarkers = (bars: CandleBar[]) => {
       const times = bars.map((b) => b.time as number);
       seedsRef.current = buildMarkerSeeds(tradesRef.current, times);
@@ -204,7 +212,7 @@ export default function PriceChart({
       if (!markersApiRef.current) {
         markersApiRef.current = createSeriesMarkers(candles, []);
       }
-      applyMarkerScale();
+      scheduleMarkerScale();
     };
 
     const { store, dispose: disposeViewport } = wireCandleViewport({
@@ -220,23 +228,21 @@ export default function PriceChart({
       onError: (err) => setError(err.message),
     });
 
-    chart.timeScale().subscribeVisibleLogicalRangeChange(applyMarkerScale);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(scheduleMarkerScale);
     chart.timeScale().fitContent();
 
-    chartRef.current = chart;
     candleRef.current = candles;
     volumeRef.current = volume;
     storeRef.current = store;
 
     return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(applyMarkerScale);
+      if (markerRaf) cancelAnimationFrame(markerRaf);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(scheduleMarkerScale);
       disposeViewport();
       chart.remove();
-      chartRef.current = null;
       candleRef.current = null;
       volumeRef.current = null;
       storeRef.current = null;
-      indicatorSeriesRef.current = [];
       markersApiRef.current = null;
       seedsRef.current = [];
     };
@@ -267,37 +273,6 @@ export default function PriceChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfgKey]);
 
-  // Индикаторы результата бэктеста — готовые значения, перерисовываем при
-  // изменении набора (не зависят от прогрузки истории).
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-
-    for (const series of indicatorSeriesRef.current) {
-      try {
-        chart.removeSeries(series);
-      } catch {
-        /* уже удалена */
-      }
-    }
-    indicatorSeriesRef.current = [];
-
-    let oscPane = 0;
-    indicators.forEach((s, i) => {
-      const key = (s.indicator || "").toLowerCase();
-      const overlay = s.overlay && !OSCILLATORS.has(key);
-      const paneIndex = overlay ? 0 : ++oscPane;
-      try {
-        const line = drawIndicator(chart, s, PALETTE[i % PALETTE.length], paneIndex);
-        if (line) indicatorSeriesRef.current.push(line);
-        if (!overlay) chart.panes()[paneIndex]?.setHeight(110);
-      } catch {
-        /* индикатор не критичен для графика */
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indicatorsKey]);
-
   return (
     <>
       <div className="strategy-chart-legend">
@@ -310,11 +285,6 @@ export default function PriceChart({
         <span className="strategy-chart-legend-item">
           <i className="dot loss" /> выход в минус {markerStats.losses}
         </span>
-        {indicators.map((s, i) => (
-          <span key={s.indicatorId + i} className="strategy-chart-legend-item">
-            <i className="dot" style={{ background: PALETTE[i % PALETTE.length] }} /> {indicatorLabel(s)}
-          </span>
-        ))}
         <span className="strategy-chart-legend-item muted">
           {loading ? "подгрузка…" : `${barsCount.toLocaleString("ru-RU")} свечей`}
         </span>

@@ -1,5 +1,7 @@
 import { CANDLE_INTERVALS, formatDate } from "../scheduler";
-import { listLastDownloads } from "../data";
+import { listLastDownloads, listLastDownloadsPage, type ListPageParams } from "../data";
+
+export { listLastDownloadsPage, type ListPageParams };
 
 export type LastDownload = {
   uid: string;

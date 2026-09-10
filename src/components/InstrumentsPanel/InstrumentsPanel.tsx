@@ -2,15 +2,18 @@ import {
   memo,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { listInstruments, listInstrumentVersions, type Instrument } from "../../api/data";
+import { listInstrumentsPage, listInstrumentVersions, type Instrument } from "../../api/data";
 import { syncInstruments } from "../../api/instruments";
 import { formatDate, formatDateTimeMs } from "../../api/scheduler";
 import { useThrottledColumnLayout } from "../../hooks/useThrottledColumnLayout";
+import { useIncrementalList } from "../../hooks/useIncrementalList";
+import { SkeletonRow } from "../common/TableParts";
 import { useNotify } from "../../notifications";
 import "../../styles/tables.css";
 import "../SchedulerPanel/SchedulerPanel.css";
@@ -34,20 +37,27 @@ type Column = {
   key: SortKey;
   label: string;
   className: string;
+  /** Есть ли серверный подстрочный фильтр по колонке. */
+  filterable?: boolean;
+  /** Есть ли серверная сортировка по колонке. */
+  sortable?: boolean;
 };
 
 const COLUMNS: Column[] = [
-  { key: "ticker", label: "ticker", className: "col-ticker" },
-  { key: "name", label: "name", className: "col-name" },
-  { key: "figi", label: "figi", className: "col-figi" },
-  { key: "uid", label: "uid", className: "col-uid" },
-  { key: "currency", label: "валюта", className: "col-currency" },
-  { key: "exchange", label: "биржа", className: "col-exchange" },
-  { key: "trading_status", label: "статус торгов", className: "col-trading-status" },
-  { key: "lot", label: "лот", className: "col-lot" },
-  { key: "version", label: "версия", className: "col-version" },
+  { key: "ticker", label: "ticker", className: "col-ticker", filterable: true, sortable: true },
+  { key: "name", label: "name", className: "col-name", filterable: true, sortable: true },
+  { key: "figi", label: "figi", className: "col-figi", filterable: true, sortable: true },
+  { key: "uid", label: "uid", className: "col-uid", filterable: true, sortable: true },
+  { key: "currency", label: "валюта", className: "col-currency", filterable: true, sortable: true },
+  { key: "exchange", label: "биржа", className: "col-exchange", filterable: true, sortable: true },
+  { key: "trading_status", label: "статус торгов", className: "col-trading-status", sortable: true },
+  { key: "lot", label: "лот", className: "col-lot", sortable: true },
+  { key: "version", label: "версия", className: "col-version", sortable: true },
   { key: "version_count", label: "версий", className: "col-version-count" },
 ];
+
+/** Ключи фильтруемых колонок (совпадают с whitelist на бэке). */
+const FILTER_KEYS = COLUMNS.filter((c) => c.filterable).map((c) => c.key);
 
 const EMPTY_FILTERS: Record<SortKey, string> = {
   ticker: "",
@@ -134,60 +144,6 @@ function normalizeRows(items: Instrument[]): TableRow[] {
   });
 }
 
-function compareRows(a: TableRow, b: TableRow, key: SortKey): number {
-  switch (key) {
-    case "ticker":
-      return a.tickerL.localeCompare(b.tickerL, "ru");
-    case "name":
-      return a.nameL.localeCompare(b.nameL, "ru");
-    case "figi":
-      return a.figiL.localeCompare(b.figiL, "ru");
-    case "uid":
-      return a.uidL.localeCompare(b.uidL, "ru");
-    case "currency":
-      return a.currencyL.localeCompare(b.currencyL, "ru");
-    case "exchange":
-      return a.exchangeL.localeCompare(b.exchangeL, "ru");
-    case "trading_status":
-      return a.tradingStatus - b.tradingStatus;
-    case "lot":
-      return (a.item.lot ?? 0) - (b.item.lot ?? 0);
-    case "version":
-      return a.versionMs - b.versionMs;
-    case "version_count":
-      return a.versionCount - b.versionCount;
-    default:
-      return 0;
-  }
-}
-
-function cellText(row: TableRow, key: SortKey): string {
-  switch (key) {
-    case "ticker":
-      return row.tickerL;
-    case "name":
-      return row.nameL;
-    case "figi":
-      return row.figiL;
-    case "uid":
-      return row.uidL;
-    case "currency":
-      return row.currencyL;
-    case "exchange":
-      return row.exchangeL;
-    case "trading_status":
-      return row.tradingStatusText;
-    case "lot":
-      return row.lotText;
-    case "version":
-      return row.versionText.toLowerCase();
-    case "version_count":
-      return row.versionCountText;
-    default:
-      return "";
-  }
-}
-
 function fmtNum(n: number): string {
   if (!Number.isFinite(n)) return "—";
   return n.toLocaleString("ru-RU", { maximumFractionDigits: 9 });
@@ -218,22 +174,32 @@ function ColumnHead({
   onFilter: (key: SortKey, value: string) => void;
 }) {
   const active = sortKey === column.key;
+  const canSort = column.sortable !== false;
   return (
-    <div className={`vtable-cell sortable ${column.className}`}>
-      <button type="button" className="sort-btn" onClick={() => onSort(column.key)}>
+    <div className={`vtable-cell ${canSort ? "sortable" : ""} ${column.className}`.trim()}>
+      <button
+        type="button"
+        className="sort-btn"
+        disabled={!canSort}
+        onClick={() => canSort && onSort(column.key)}
+      >
         <span>{column.label}</span>
-        <span className={`sort-indicator ${active ? "is-active" : ""}`} aria-hidden="true">
-          {active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
-        </span>
+        {canSort ? (
+          <span className={`sort-indicator ${active ? "is-active" : ""}`} aria-hidden="true">
+            {active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
+          </span>
+        ) : null}
       </button>
-      <input
-        className="col-filter"
-        value={filter}
-        onChange={(e) => onFilter(column.key, e.target.value)}
-        onClick={(e) => e.stopPropagation()}
-        placeholder="фильтр"
-        aria-label={`Фильтр ${column.label}`}
-      />
+      {column.filterable ? (
+        <input
+          className="col-filter"
+          value={filter}
+          onChange={(e) => onFilter(column.key, e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          placeholder="фильтр"
+          aria-label={`Фильтр ${column.label}`}
+        />
+      ) : null}
     </div>
   );
 }
@@ -247,13 +213,13 @@ const InstrumentRowView = memo(function InstrumentRowView({
   row: TableRow;
   alt: boolean;
   selected: boolean;
-  onOpen: (uid: string) => void;
+  onOpen: (item: Instrument) => void;
 }) {
   const item = row.item;
   return (
     <div
       className={`vtable-row is-clickable ${alt ? "is-alt" : ""} ${selected ? "is-selected" : ""}`}
-      onClick={() => onOpen(item.uid)}
+      onClick={() => onOpen(item)}
     >
       <div className="vtable-cell col-ticker" title={item.ticker}>
         {item.ticker ? <span className="table-chip ticker">{item.ticker}</span> : "—"}
@@ -661,47 +627,56 @@ function InstrumentDetails({ item, onClose }: { item: Instrument; onClose: () =>
 
 export default function InstrumentsPanel() {
   const notify = useNotify();
-  const [items, setItems] = useState<TableRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [confirmRefresh, setConfirmRefresh] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("ticker");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [filters, setFilters] = useState<Record<SortKey, string>>(EMPTY_FILTERS);
-  const [selectedUid, setSelectedUid] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Instrument | null>(null);
   const confirmBackdropPressed = useRef(false);
   const deferredFilters = useDeferredValue(filters);
 
-  const reload = async () => {
-    setLoading(true);
-    try {
-      const rows = await listInstruments("", 20000, { lite: false });
-      setItems(normalizeRows(rows));
-    } catch (err) {
-      notify.error(err instanceof Error ? err.message : "Не удалось загрузить инструменты");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const fieldFilters = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const key of FILTER_KEYS) out[key] = deferredFilters[key];
+    return out;
+  }, [deferredFilters]);
+
+  const list = useIncrementalList<TableRow>({
+    fetchPage: async (p) => {
+      try {
+        const res = await listInstrumentsPage({
+          offset: p.offset,
+          limit: p.limit,
+          sortBy: p.sortBy,
+          sortDesc: p.sortDesc,
+          fieldFilters: p.fieldFilters,
+          lite: false,
+        });
+        return { rows: normalizeRows(res.items), total: res.total };
+      } catch (err) {
+        notify.error(err instanceof Error ? err.message : "Не удалось загрузить инструменты");
+        throw err;
+      }
+    },
+    sortBy: sortKey === "version_count" ? "ticker" : sortKey,
+    sortDesc: sortDir === "desc",
+    fieldFilters,
+  });
 
   useEffect(() => {
-    void reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial load
-  }, []);
-
-  useEffect(() => {
-    if (!selectedUid && !confirmRefresh) return;
+    if (!selected && !confirmRefresh) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (confirmRefresh) {
         setConfirmRefresh(false);
         return;
       }
-      setSelectedUid(null);
+      setSelected(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedUid, confirmRefresh]);
+  }, [selected, confirmRefresh]);
 
   const onSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -718,34 +693,27 @@ export default function InstrumentsPanel() {
 
   const resetFilters = () => setFilters(EMPTY_FILTERS);
 
-  const filteredIndices = useMemo(() => {
-    const active = COLUMNS.map((c) => ({
-      key: c.key,
-      q: deferredFilters[c.key].trim().toLowerCase(),
-    })).filter((f) => f.q);
-    const dir = sortDir === "asc" ? 1 : -1;
-    const indices: number[] = [];
-    for (let i = 0; i < items.length; i += 1) {
-      const row = items[i];
-      if (active.some((f) => !cellText(row, f.key).includes(f.q))) continue;
-      indices.push(i);
-    }
-    indices.sort((ia, ib) => compareRows(items[ia], items[ib], sortKey) * dir);
-    return indices;
-  }, [items, deferredFilters, sortKey, sortDir]);
-
-  const selected = useMemo(
-    () => (selectedUid ? items.find((row) => row.item.uid === selectedUid)?.item ?? null : null),
-    [items, selectedUid],
-  );
-
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
-    count: filteredIndices.length,
+    count: list.total,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 8,
   });
+
+  const virtualItems = virtualizer.getVirtualItems();
+  const firstIndex = virtualItems[0]?.index ?? 0;
+  const lastIndex = virtualItems[virtualItems.length - 1]?.index ?? 0;
+  const { setVisibleRange } = list;
+
+  useLayoutEffect(() => {
+    const el = parentRef.current;
+    if (el) setVisibleRange(0, Math.max(10, Math.ceil(el.clientHeight / ROW_HEIGHT)));
+  }, [setVisibleRange]);
+
+  useEffect(() => {
+    if (virtualItems.length > 0) setVisibleRange(firstIndex, lastIndex);
+  }, [firstIndex, lastIndex, virtualItems.length, setVisibleRange]);
 
   useThrottledColumnLayout(
     parentRef,
@@ -773,7 +741,7 @@ export default function InstrumentsPanel() {
       keys.forEach((key, i) => el.style.setProperty(`--i-col-${key}`, `${sizes[i]}px`));
       el.style.setProperty("--vtable-width", `${available}px`);
     },
-    [loading, filteredIndices.length],
+    [list.total],
   );
 
   const onRefresh = async () => {
@@ -785,7 +753,7 @@ export default function InstrumentsPanel() {
         `получено ${result.fetched}, новых ${result.inserted}, обновлено ${result.updated}, без изменений ${result.unchanged}`,
         "Справочник обновлён",
       );
-      await reload();
+      list.reload();
     } catch (err) {
       notify.error(err instanceof Error ? err.message : "Не удалось обновить инструменты");
     } finally {
@@ -804,76 +772,82 @@ export default function InstrumentsPanel() {
           <button type="button" className="btn ghost" onClick={resetFilters}>
             Сбросить фильтры
           </button>
-          <button type="button" className="btn ghost" disabled={loading} onClick={() => void reload()}>
-            {loading ? "Загрузка…" : "Обновить таблицу"}
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={list.loading}
+            onClick={list.reload}
+          >
+            {list.loading ? "Загрузка…" : "Обновить таблицу"}
           </button>
           <button
             type="button"
             className="btn primary"
-            disabled={refreshing || loading}
+            disabled={refreshing}
             onClick={() => setConfirmRefresh(true)}
           >
             {refreshing ? "Запрос к Тинькофф…" : "Обновить из Тинькофф"}
           </button>
           <span className="filters-meta">
-            <span className="hint">
-              {filteredIndices.length} из {items.length}
-            </span>
+            <span className="hint">{list.total.toLocaleString("ru-RU")} инстр.</span>
           </span>
         </div>
       </div>
 
-      {loading && items.length === 0 ? <p className="hint">Загрузка…</p> : null}
-      {!loading && items.length > 0 && filteredIndices.length === 0 ? (
+      {list.error ? <p className="error">{list.error}</p> : null}
+      {list.total === 0 && !list.loading ? (
         <p className="hint">Нет строк по текущим фильтрам.</p>
       ) : null}
 
       <div ref={parentRef} className="table-scroll table-scroll-fill vtable-scroll instruments-vtable">
-        {items.length > 0 ? (
-          <div className="vtable">
-            <div className="vtable-head">
-              {COLUMNS.map((column) => (
-                <ColumnHead
-                  key={column.key}
-                  column={column}
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  filter={filters[column.key]}
-                  onSort={onSort}
-                  onFilter={onFilter}
-                />
-              ))}
-            </div>
-            <div className="vtable-body" style={{ height: `${virtualizer.getTotalSize()}px` }}>
-              {virtualizer.getVirtualItems().map((virtualRow) => {
-                const row = items[filteredIndices[virtualRow.index]];
-                return (
-                  <div
-                    key={row.item.uid}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      height: `${virtualRow.size}px`,
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
+        <div className="vtable">
+          <div className="vtable-head">
+            {COLUMNS.map((column) => (
+              <ColumnHead
+                key={column.key}
+                column={column}
+                sortKey={sortKey}
+                sortDir={sortDir}
+                filter={filters[column.key]}
+                onSort={onSort}
+                onFilter={onFilter}
+              />
+            ))}
+          </div>
+          <div className="vtable-body" style={{ height: `${virtualizer.getTotalSize()}px` }}>
+            {virtualItems.map((virtualRow) => {
+              const row = list.rowAt(virtualRow.index);
+              const alt = virtualRow.index % 2 === 1;
+              return (
+                <div
+                  key={virtualRow.key}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  {row ? (
                     <InstrumentRowView
                       row={row}
-                      alt={virtualRow.index % 2 === 1}
-                      selected={row.item.uid === selectedUid}
-                      onOpen={setSelectedUid}
+                      alt={alt}
+                      selected={row.item.uid === selected?.uid}
+                      onOpen={setSelected}
                     />
-                  </div>
-                );
-              })}
-            </div>
+                  ) : (
+                    <SkeletonRow columns={COLUMNS.length} alt={alt} />
+                  )}
+                </div>
+              );
+            })}
           </div>
-        ) : null}
+        </div>
       </div>
 
-      {selected ? <InstrumentDetails item={selected} onClose={() => setSelectedUid(null)} /> : null}
+      {selected ? <InstrumentDetails item={selected} onClose={() => setSelected(null)} /> : null}
 
       {confirmRefresh ? (
         <div

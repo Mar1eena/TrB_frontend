@@ -5,6 +5,7 @@ import * as api from "../../api/strategy";
 import { BLANK_TEMPLATE, SPEC_TEMPLATES, type SpecTemplate } from "./templates";
 import EquityChart from "./EquityChart";
 import PriceChart from "./PriceChart";
+import TradesTable from "./TradesTable";
 import SpecBuilder from "./SpecBuilder";
 import { InfoTip } from "./InfoTip";
 import {
@@ -19,6 +20,7 @@ import {
 } from "./SearchBuilders";
 import { ConfirmDialog, PromptDialog } from "./ConfirmDialog";
 import { normalizeSpec, pruneSpec } from "./specModel";
+import { useOverlayClose } from "../../hooks/useOverlayClose";
 import "../SchedulerPanel/SchedulerPanel.css";
 import "../../styles/tables.css";
 import "./StrategyPanel.css";
@@ -516,10 +518,14 @@ function SpecEditorModal({
 
   const indicatorCount = Array.isArray(spec.indicators) ? spec.indicators.length : 0;
 
+  const overlay = useOverlayClose(() => {
+    if (!busy) onClose();
+  });
+
   return (
     <>
-    <div className="strategy-modal-overlay" onClick={() => (busy ? null : onClose())}>
-      <div className="strategy-modal wide strategy-editor" onClick={(e) => e.stopPropagation()}>
+    <div className="strategy-modal-overlay" {...overlay}>
+      <div className="strategy-modal wide strategy-editor">
         <header className="strategy-modal-head">
           <div>
             <h2>{initial ? "Редактор стратегии" : "Новая стратегия"}</h2>
@@ -1055,10 +1061,11 @@ function BacktestResultModal({
   const run = data?.run ?? statusRun;
   const metrics = data?.metrics;
   const trades = data?.trades ?? [];
+  const overlay = useOverlayClose(onClose);
 
   return (
-    <div className="strategy-modal-overlay" onClick={onClose}>
-      <div className="strategy-modal wide" onClick={(e) => e.stopPropagation()}>
+    <div className="strategy-modal-overlay" {...overlay}>
+      <div className="strategy-modal wide">
         <header className="strategy-modal-head">
           <h2>
             Результат бэктеста {run ? statusChip(run.status) : null}
@@ -1138,12 +1145,12 @@ function BacktestResultModal({
             </div>
 
             {chartTab === "price" && run.config ? (
-              <PriceChart config={run.config} indicators={data?.indicators} trades={trades} />
+              <PriceChart config={run.config} trades={trades} />
             ) : null}
 
             {chartTab === "equity" && data?.equity && data.equity.length > 1 ? (
               <div className="strategy-chart-wrap">
-                <EquityChart points={data.equity} trades={trades} />
+                <EquityChart points={data.equity} />
               </div>
             ) : null}
           </div>
@@ -1152,54 +1159,7 @@ function BacktestResultModal({
         {trades.length > 0 ? (
           <div className="strategy-trades">
             <h3>Сделки ({trades.length})</h3>
-            <div className="table-scroll strategy-trades-scroll">
-              <table className="strategy-table compact">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Напр.</th>
-                    <th>Вход</th>
-                    <th className="num">Цена</th>
-                    <th className="num" title="Цена входа × размер позиции">Сумма входа</th>
-                    <th>Выход</th>
-                    <th className="num">Цена</th>
-                    <th className="num" title="Цена выхода × размер позиции">Сумма выхода</th>
-                    <th className="num">Размер</th>
-                    <th className="num">P/L</th>
-                    <th className="num" title="Доходность сделки: P/L ÷ сумма входа">P/L %</th>
-                    <th className="num">Баров</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trades.map((t) => {
-                    const entryValue = t.entryPrice * t.size;
-                    const exitValue = t.exitPrice * t.size;
-                    const plPct =
-                      Number.isFinite(t.pnlPct) && Math.abs(t.pnlPct) <= 20
-                        ? t.pnlPct
-                        : entryValue
-                          ? t.pnl / Math.abs(entryValue)
-                          : NaN;
-                    return (
-                      <tr key={t.tradeId} className={t.pnl >= 0 ? "trade-win" : "trade-loss"}>
-                        <td>{t.tradeId}</td>
-                        <td>{t.isLong ? "long" : "short"}</td>
-                        <td className="table-datetime">{api.fmtDateTime(t.entryTime)}</td>
-                        <td className="num">{api.num(t.entryPrice, 4)}</td>
-                        <td className="num">{api.num(entryValue)}</td>
-                        <td className="table-datetime">{api.fmtDateTime(t.exitTime)}</td>
-                        <td className="num">{api.num(t.exitPrice, 4)}</td>
-                        <td className="num">{api.num(exitValue)}</td>
-                        <td className="num">{api.num(t.size, 0)}</td>
-                        <td className="num">{api.num(t.pnl)}</td>
-                        <td className="num">{api.pct(plPct)}</td>
-                        <td className="num">{t.barsHeld}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <TradesTable trades={trades} />
           </div>
         ) : null}
       </div>
@@ -1568,11 +1528,12 @@ function SearchResultModal({
 
   const p = run?.progress;
   const active = ACTIVE_STATUSES.includes(p?.status ?? "RUN_QUEUED");
+  const overlay = useOverlayClose(onClose);
 
   return (
     <>
-    <div className="strategy-modal-overlay" onClick={onClose}>
-      <div className="strategy-modal wide" onClick={(e) => e.stopPropagation()}>
+    <div className="strategy-modal-overlay" {...overlay}>
+      <div className="strategy-modal wide">
         <header className="strategy-modal-head">
           <h2>Поиск {p ? statusChip(p.status) : null}</h2>
           <button type="button" className="strategy-modal-close" onClick={onClose}>

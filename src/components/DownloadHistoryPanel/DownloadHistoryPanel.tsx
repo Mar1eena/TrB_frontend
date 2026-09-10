@@ -1,9 +1,9 @@
 import { useNotify } from "../../notifications";
 import {
   memo,
-  startTransition,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,24 +11,17 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { CANDLE_INTERVALS } from "../../api/scheduler";
 import {
-  fetchLastDownloads,
   formatDateTime,
   intervalLabel,
-  type LastDownload,
+  listLastDownloadsPage,
 } from "../../api/historicCandle";
 import { useThrottledColumnLayout } from "../../hooks/useThrottledColumnLayout";
+import { useIncrementalList } from "../../hooks/useIncrementalList";
+import { SortHead, SkeletonRow, type SortDir } from "../common/TableParts";
 import "../../styles/tables.css";
 import "../SchedulerPanel/SchedulerPanel.css";
 
-type SortKey =
-  | "uid"
-  | "name"
-  | "ticker"
-  | "interval"
-  | "last_start"
-  | "last_end";
-
-type SortDir = "asc" | "desc";
+type SortKey = "uid" | "name" | "ticker" | "interval" | "last_start" | "last_end";
 
 type HistoryRow = {
   uid: string;
@@ -37,15 +30,12 @@ type HistoryRow = {
   interval: number | null;
   intervalText: string;
   startMs: number;
-  endMs: number;
   startText: string;
   endText: string;
-  uidL: string;
-  nameL: string;
-  tickerL: string;
 };
 
 const ROW_HEIGHT = 40;
+const COLUMN_COUNT = 6;
 
 function toMs(value?: string): number {
   if (!value) return 0;
@@ -53,79 +43,27 @@ function toMs(value?: string): number {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-function normalizeRows(items: LastDownload[]): HistoryRow[] {
-  const rows = items.map((row) => {
-    const fromDownload = Boolean(row.has_download);
-    const startMs = toMs(row.last_start);
-    const endMs = fromDownload ? toMs(row.last_end) : 0;
-    return {
-      uid: row.uid,
-      name: row.name || "",
-      ticker: row.ticker || "",
-      interval: row.interval,
-      intervalText:
-        row.interval != null && row.interval > 0
-          ? intervalLabel(row.interval)
-          : "—",
-      startMs,
-      endMs,
-      startText: formatDateTime(row.last_start),
-      endText: fromDownload ? formatDateTime(row.last_end) : "—",
-      uidL: (row.uid || "").toLowerCase(),
-      nameL: (row.name || "").toLowerCase(),
-      tickerL: (row.ticker || "").toLowerCase(),
-    };
-  });
-  // Default view is last_start DESC — avoid re-sorting on first paint.
-  rows.sort((a, b) => b.startMs - a.startMs);
-  return rows;
-}
-
-function compareRows(a: HistoryRow, b: HistoryRow, key: SortKey): number {
-  switch (key) {
-    case "uid":
-      return a.uidL.localeCompare(b.uidL, "ru");
-    case "name":
-      return a.nameL.localeCompare(b.nameL, "ru");
-    case "ticker":
-      return a.tickerL.localeCompare(b.tickerL, "ru");
-    case "interval":
-      return (a.interval ?? -1) - (b.interval ?? -1);
-    case "last_start":
-      return a.startMs - b.startMs;
-    case "last_end":
-      return a.endMs - b.endMs;
-    default:
-      return 0;
-  }
-}
-
-function SortHead({
-  label,
-  column,
-  sortKey,
-  sortDir,
-  onSort,
-  className = "",
-}: {
-  label: string;
-  column: SortKey;
-  sortKey: SortKey;
-  sortDir: SortDir;
-  onSort: (key: SortKey) => void;
-  className?: string;
-}) {
-  const active = sortKey === column;
-  return (
-    <div className={`vtable-cell sortable ${className}`.trim()}>
-      <button type="button" className="sort-btn" onClick={() => onSort(column)}>
-        <span>{label}</span>
-        <span className={`sort-indicator ${active ? "is-active" : ""}`} aria-hidden="true">
-          {active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
-        </span>
-      </button>
-    </div>
-  );
+function toHistoryRow(row: {
+  uid: string;
+  name: string;
+  ticker: string;
+  interval: number | null;
+  last_start: string;
+  last_end: string;
+  has_download: number | boolean;
+}): HistoryRow {
+  const fromDownload = Boolean(row.has_download);
+  return {
+    uid: row.uid,
+    name: row.name || "",
+    ticker: row.ticker || "",
+    interval: row.interval,
+    intervalText:
+      row.interval != null && row.interval > 0 ? intervalLabel(row.interval) : "—",
+    startMs: toMs(row.last_start),
+    startText: formatDateTime(row.last_start),
+    endText: fromDownload ? formatDateTime(row.last_end) : "—",
+  };
 }
 
 const HistoryRowView = memo(function HistoryRowView({
@@ -161,8 +99,6 @@ const HistoryRowView = memo(function HistoryRowView({
 
 export default function DownloadHistoryPanel() {
   const notify = useNotify();
-  const [items, setItems] = useState<HistoryRow[]>([]);
-  const [loading, setLoading] = useState(true);
 
   const [intervalFilter, setIntervalFilter] = useState<string>("all");
   const [tickerFilter, setTickerFilter] = useState("");
@@ -177,53 +113,45 @@ export default function DownloadHistoryPanel() {
   const [sortKey, setSortKey] = useState<SortKey>("last_start");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const reload = () => {
-    setLoading(true);
-    void (async () => {
-      try {
-        const rows = normalizeRows(await fetchLastDownloads("", 5000));
-        startTransition(() => {
-          setItems(rows);
-          setLoading(false);
-        });
-      } catch (err) {
-        notify.error(err instanceof Error ? err.message : "Ошибка загрузки");
-        setLoading(false);
-      }
-    })();
-  };
+  const fieldFilters = useMemo(
+    () => ({ ticker: deferredTicker, name: deferredName, uid: deferredUid }),
+    [deferredTicker, deferredName, deferredUid],
+  );
+  const extra = useMemo(
+    () => ({ intervalFilter: deferredInterval === "all" ? 0 : Number(deferredInterval) }),
+    [deferredInterval],
+  );
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    void (async () => {
+  const list = useIncrementalList<HistoryRow>({
+    fetchPage: async (p) => {
       try {
-        const rows = normalizeRows(await fetchLastDownloads("", 5000));
-        if (cancelled) return;
-        startTransition(() => {
-          setItems(rows);
-          setLoading(false);
+        const res = await listLastDownloadsPage({
+          offset: p.offset,
+          limit: p.limit,
+          sortBy: p.sortBy,
+          sortDesc: p.sortDesc,
+          fieldFilters: p.fieldFilters,
+          intervalFilter: Number(p.extra?.intervalFilter) || 0,
         });
+        return { rows: res.items.map(toHistoryRow), total: res.total };
       } catch (err) {
-        if (cancelled) return;
         notify.error(err instanceof Error ? err.message : "Ошибка загрузки");
-        setLoading(false);
+        throw err;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    },
+    sortBy: sortKey,
+    sortDesc: sortDir === "desc",
+    fieldFilters,
+    extra,
+  });
 
   const onSort = (key: SortKey) => {
-    startTransition(() => {
-      if (sortKey === key) {
-        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-        return;
-      }
-      setSortKey(key);
-      setSortDir(key === "last_start" || key === "last_end" ? "desc" : "asc");
-    });
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDir(key === "last_start" || key === "last_end" ? "desc" : "asc");
   };
 
   const resetFilters = () => {
@@ -233,54 +161,31 @@ export default function DownloadHistoryPanel() {
     setUidFilter("");
   };
 
-  const filteredIndices = useMemo(() => {
-    const tickerQ = deferredTicker.trim().toLowerCase();
-    const nameQ = deferredName.trim().toLowerCase();
-    const uidQ = deferredUid.trim().toLowerCase();
-    const intervalValue =
-      deferredInterval === "all" ? null : Number(deferredInterval);
-    const noTextFilter = !tickerQ && !nameQ && !uidQ;
-    const noIntervalFilter = intervalValue == null;
-    const defaultOrder =
-      sortKey === "last_start" && sortDir === "desc" && noTextFilter && noIntervalFilter;
-
-    if (defaultOrder) {
-      // items already sorted by startMs DESC on load
-      const all = new Array<number>(items.length);
-      for (let i = 0; i < items.length; i += 1) all[i] = i;
-      return all;
-    }
-
-    const indices: number[] = [];
-    for (let i = 0; i < items.length; i += 1) {
-      const row = items[i];
-      if (intervalValue != null && (row.interval ?? -1) !== intervalValue) continue;
-      if (tickerQ && !row.tickerL.includes(tickerQ)) continue;
-      if (nameQ && !row.nameL.includes(nameQ)) continue;
-      if (uidQ && !row.uidL.includes(uidQ)) continue;
-      indices.push(i);
-    }
-
-    const dir = sortDir === "asc" ? 1 : -1;
-    indices.sort((ia, ib) => compareRows(items[ia], items[ib], sortKey) * dir);
-    return indices;
-  }, [
-    items,
-    deferredInterval,
-    deferredTicker,
-    deferredName,
-    deferredUid,
-    sortKey,
-    sortDir,
-  ]);
-
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
-    count: filteredIndices.length,
+    count: list.total,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 6,
   });
+
+  const virtualItems = virtualizer.getVirtualItems();
+  const firstIndex = virtualItems[0]?.index ?? 0;
+  const lastIndex = virtualItems[virtualItems.length - 1]?.index ?? 0;
+  const { setVisibleRange } = list;
+
+  // Первичная оценка видимого окна до появления виртуальных строк —
+  // чтобы размер страницы сразу считался от реальной высоты таблицы.
+  useLayoutEffect(() => {
+    const el = parentRef.current;
+    if (el) {
+      setVisibleRange(0, Math.max(10, Math.ceil(el.clientHeight / ROW_HEIGHT)));
+    }
+  }, [setVisibleRange]);
+
+  useEffect(() => {
+    if (virtualItems.length > 0) setVisibleRange(firstIndex, lastIndex);
+  }, [firstIndex, lastIndex, virtualItems.length, setVisibleRange]);
 
   useThrottledColumnLayout(
     parentRef,
@@ -294,18 +199,14 @@ export default function DownloadHistoryPanel() {
       const minInterval = 7 * rem;
       const minStart = 10 * rem;
       const minEnd = 10 * rem;
-      const minTotal =
-        minUid + minName + minTicker + minInterval + minStart + minEnd;
-      const extra = Math.max(0, available - minTotal);
-      const uid = Math.floor(minUid + extra * 0.16);
-      const name = Math.floor(minName + extra * 0.28);
-      const ticker = Math.floor(minTicker + extra * 0.14);
-      const interval = Math.floor(minInterval + extra * 0.1);
-      const start = Math.floor(minStart + extra * 0.16);
-      const end = Math.max(
-        minEnd,
-        available - uid - name - ticker - interval - start,
-      );
+      const minTotal = minUid + minName + minTicker + minInterval + minStart + minEnd;
+      const extraPx = Math.max(0, available - minTotal);
+      const uid = Math.floor(minUid + extraPx * 0.16);
+      const name = Math.floor(minName + extraPx * 0.28);
+      const ticker = Math.floor(minTicker + extraPx * 0.14);
+      const interval = Math.floor(minInterval + extraPx * 0.1);
+      const start = Math.floor(minStart + extraPx * 0.16);
+      const end = Math.max(minEnd, available - uid - name - ticker - interval - start);
       el.style.setProperty("--h-col-uid", `${uid}px`);
       el.style.setProperty("--h-col-name", `${name}px`);
       el.style.setProperty("--h-col-ticker", `${ticker}px`);
@@ -314,8 +215,10 @@ export default function DownloadHistoryPanel() {
       el.style.setProperty("--h-col-end", `${end}px`);
       el.style.setProperty("--vtable-width", `${available}px`);
     },
-    [loading, filteredIndices.length],
+    [list.total],
   );
+
+  const empty = list.total === 0 && !list.loading;
 
   return (
     <section className="panel-page history-panel">
@@ -381,103 +284,60 @@ export default function DownloadHistoryPanel() {
           <button
             type="button"
             className="btn primary"
-            disabled={loading}
-            onClick={reload}
+            disabled={list.loading}
+            onClick={list.reload}
           >
-            {loading ? "Загрузка…" : "Обновить"}
+            {list.loading ? "Загрузка…" : "Обновить"}
           </button>
           <span className="filters-meta">
-            <span className="hint">
-              {filteredIndices.length} из {items.length}
-            </span>
+            <span className="hint">{list.total} строк</span>
           </span>
         </div>
       </div>
 
-      {loading && items.length === 0 ? <p className="hint">Загрузка…</p> : null}
-      {!loading && items.length > 0 && filteredIndices.length === 0 ? (
-        <p className="hint">Нет строк по текущим фильтрам.</p>
-      ) : null}
+      {list.error ? <p className="error">{list.error}</p> : null}
+      {empty ? <p className="hint">Нет строк по текущим фильтрам.</p> : null}
 
       <div
         ref={parentRef}
         className="table-scroll table-scroll-fill vtable-scroll history-vtable"
       >
-        {items.length > 0 ? (
-          <div className="vtable">
-            <div className="vtable-head">
-              <SortHead
-                label="uid"
-                column="uid"
-                sortKey={sortKey}
-                sortDir={sortDir}
-                onSort={onSort}
-                className="col-uid"
-              />
-              <SortHead
-                label="name"
-                column="name"
-                sortKey={sortKey}
-                sortDir={sortDir}
-                onSort={onSort}
-                className="col-name"
-              />
-              <SortHead
-                label="ticker"
-                column="ticker"
-                sortKey={sortKey}
-                sortDir={sortDir}
-                onSort={onSort}
-                className="col-ticker"
-              />
-              <SortHead
-                label="interval"
-                column="interval"
-                sortKey={sortKey}
-                sortDir={sortDir}
-                onSort={onSort}
-              />
-              <SortHead
-                label="последняя загрузка"
-                column="last_start"
-                sortKey={sortKey}
-                sortDir={sortDir}
-                onSort={onSort}
-              />
-              <SortHead
-                label="конец окна"
-                column="last_end"
-                sortKey={sortKey}
-                sortDir={sortDir}
-                onSort={onSort}
-              />
-            </div>
-
-            <div
-              className="vtable-body"
-              style={{ height: `${virtualizer.getTotalSize()}px` }}
-            >
-              {virtualizer.getVirtualItems().map((virtualRow) => {
-                const row = items[filteredIndices[virtualRow.index]];
-                return (
-                  <div
-                    key={`${row.uid}:${row.interval ?? "none"}:${row.startMs}`}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      height: `${virtualRow.size}px`,
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    <HistoryRowView row={row} alt={virtualRow.index % 2 === 1} />
-                  </div>
-                );
-              })}
-            </div>
+        <div className="vtable">
+          <div className="vtable-head">
+            <SortHead label="uid" column="uid" sortKey={sortKey} sortDir={sortDir} onSort={onSort} className="col-uid" />
+            <SortHead label="name" column="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} className="col-name" />
+            <SortHead label="ticker" column="ticker" sortKey={sortKey} sortDir={sortDir} onSort={onSort} className="col-ticker" />
+            <SortHead label="interval" column="interval" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+            <SortHead label="последняя загрузка" column="last_start" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+            <SortHead label="конец окна" column="last_end" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
           </div>
-        ) : null}
+
+          <div className="vtable-body" style={{ height: `${virtualizer.getTotalSize()}px` }}>
+            {virtualItems.map((virtualRow) => {
+              const row = list.rowAt(virtualRow.index);
+              const alt = virtualRow.index % 2 === 1;
+              return (
+                <div
+                  key={virtualRow.key}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  {row ? (
+                    <HistoryRowView row={row} alt={alt} />
+                  ) : (
+                    <SkeletonRow columns={COLUMN_COUNT} alt={alt} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </section>
   );

@@ -315,6 +315,49 @@
   cursor: pointer;
 }
 
+/* Скелетон-строка на время подгрузки страницы (см. useIncrementalList) */
+.vtable-row.is-skeleton {
+  pointer-events: none;
+}
+
+.vtable-skeleton-bar {
+  display: block;
+  width: 62%;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(200, 180, 230, 0.08) 0%,
+    rgba(200, 180, 230, 0.18) 50%,
+    rgba(200, 180, 230, 0.08) 100%
+  );
+  background-size: 200% 100%;
+  animation: vtable-skeleton-shimmer 1.1s ease-in-out infinite;
+}
+
+.vtable-row.is-skeleton .vtable-cell:nth-child(3n) .vtable-skeleton-bar {
+  width: 40%;
+}
+
+.vtable-row.is-skeleton .vtable-cell:nth-child(2n) .vtable-skeleton-bar {
+  width: 78%;
+}
+
+@keyframes vtable-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vtable-skeleton-bar {
+    animation: none;
+  }
+}
+
 .data-table tbody tr.has-targets:not(.is-selected) td.col-uid {
   box-shadow: inset 3px 0 0 rgba(61, 186, 122, 0.7);
 }

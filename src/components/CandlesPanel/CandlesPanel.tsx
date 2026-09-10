@@ -1,9 +1,6 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   CrosshairMode,
-  HistogramSeries,
-  LineSeries,
-  LineStyle,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
@@ -13,23 +10,8 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { CANDLE_INTERVALS, INTERVAL_1DAY, INTERVAL_1MIN } from "../../api/scheduler";
-import {
-  type IndicatorConfig,
-} from "../../api/indicators";
 import { type CandleBar } from "../../api/tinvest/candles";
 import InstrumentSelect, { type PickedInstrument } from "./InstrumentSelect";
-import IndicatorsModal, { isOscillator } from "./IndicatorsModal";
-import {
-  applyIndicatorToSeries,
-  computeIndicatorForDisplay,
-  indicatorComputeSig,
-  missingIndicatorRanges,
-  pointsForBars,
-  rangeFromBarsSec,
-  rangeToDates,
-  unionIndicatorRanges,
-  type IndicatorTimeRange,
-} from "./indicatorLoad";
 import { CandleViewportStore } from "./viewportStore";
 import {
   createCandleChart,
@@ -42,7 +24,6 @@ import "../SchedulerPanel/SchedulerPanel.css";
 import "./CandlesPanel.css";
 
 const LS_KEY = "trb.candles.panel.v2";
-const LS_INDICATORS_KEY = "trb.candles.indicators.v1";
 
 type SavedState = {
   instrument?: PickedInstrument | null;
@@ -74,28 +55,9 @@ function loadSaved(): { instrument: PickedInstrument | null; interval: number } 
   }
 }
 
-function loadSavedIndicators(): IndicatorConfig[] {
-  try {
-    const raw = localStorage.getItem(LS_INDICATORS_KEY);
-    if (!raw) return [];
-    const list = JSON.parse(raw) as IndicatorConfig[];
-    return Array.isArray(list) ? list : [];
-  } catch {
-    return [];
-  }
-}
-
 function saveState(instrument: PickedInstrument | null, interval: number) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({ instrument, interval }));
-  } catch {
-    /* ignore */
-  }
-}
-
-function saveIndicatorsState(indicators: IndicatorConfig[]) {
-  try {
-    localStorage.setItem(LS_INDICATORS_KEY, JSON.stringify(indicators));
   } catch {
     /* ignore */
   }
@@ -135,119 +97,13 @@ function priceFormat(price: number): { type: "price"; precision: number; minMove
   return { type: "price", precision: 6, minMove: 0.000001 };
 }
 
-function oscillatorScaleId(indicatorId: string): string {
-  return `osc_${indicatorId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
-}
-
-function applyOscillatorScale(chart: IChartApi, scaleId: string): void {
-  // Custom price scale exists only after at least one series uses priceScaleId.
-  chart.priceScale(scaleId).applyOptions({
-    scaleMargins: { top: 0.76, bottom: 0.02 },
-    borderVisible: true,
-    borderColor: "rgba(200, 180, 230, 0.18)",
-  });
-}
-
-function createIndicatorSeries(
-  chart: IChartApi,
-  ind: IndicatorConfig,
-  scaleId: string,
-): ISeriesApi<"Line" | "Histogram">[] {
-  if (ind.type === 5) {
-    const upper = chart.addSeries(LineSeries, {
-      color: ind.color,
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      priceScaleId: scaleId,
-    });
-    const middle = chart.addSeries(LineSeries, {
-      color: ind.color,
-      lineWidth: (ind.lineWidth ?? 2) as 1 | 2 | 3 | 4,
-      priceScaleId: scaleId,
-    });
-    const lower = chart.addSeries(LineSeries, {
-      color: ind.color,
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      priceScaleId: scaleId,
-    });
-    return [upper, middle, lower];
-  }
-
-  if (ind.type === 4) {
-    const macd = chart.addSeries(LineSeries, {
-      color: ind.color,
-      lineWidth: (ind.lineWidth ?? 2) as 1 | 2 | 3 | 4,
-      priceScaleId: scaleId,
-    });
-    const signal = chart.addSeries(LineSeries, {
-      color: "#f59e0b",
-      lineWidth: 1,
-      lineStyle: LineStyle.Dotted,
-      priceScaleId: scaleId,
-    });
-    const hist = chart.addSeries(HistogramSeries, {
-      priceScaleId: scaleId,
-    });
-    return [macd, signal, hist];
-  }
-
-  const line = chart.addSeries(LineSeries, {
-    color: ind.color,
-    lineWidth: (ind.lineWidth ?? 2) as 1 | 2 | 3 | 4,
-    priceScaleId: scaleId,
-  });
-  return [line];
-}
-
-function applyIndicatorAppearance(
-  seriesList: ISeriesApi<"Line" | "Histogram">[],
-  ind: IndicatorConfig,
-  visible: boolean,
-): void {
-  const width = (ind.lineWidth ?? 2) as 1 | 2 | 3 | 4;
-  if (ind.type === 5) {
-    seriesList[0]?.applyOptions({ color: ind.color, lineWidth: 1, visible });
-    seriesList[1]?.applyOptions({ color: ind.color, lineWidth: width, visible });
-    seriesList[2]?.applyOptions({ color: ind.color, lineWidth: 1, visible });
-    return;
-  }
-  if (ind.type === 4) {
-    seriesList[0]?.applyOptions({ color: ind.color, lineWidth: width, visible });
-    seriesList[1]?.applyOptions({ color: "#f59e0b", lineWidth: 1, visible });
-    seriesList[2]?.applyOptions({ visible });
-    return;
-  }
-  seriesList[0]?.applyOptions({ color: ind.color, lineWidth: width, visible });
-}
-
-function detachSeries(
-  chart: IChartApi,
-  seriesList: ISeriesApi<"Line" | "Histogram">[],
-): void {
-  for (const series of seriesList) {
-    try {
-      chart.removeSeries(series);
-    } catch {
-      /* already detached */
-    }
-  }
-}
-
 export default function CandlesPanel() {
   const saved = useRef(loadSaved()).current;
   const [instrument, setInstrument] = useState<PickedInstrument | null>(saved.instrument);
   const [interval, setInterval] = useState(saved.interval);
-  const [indicators, setIndicators] = useState<IndicatorConfig[]>(loadSavedIndicators);
-  const indicatorsRef = useRef(indicators);
-  indicatorsRef.current = indicators;
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editIndicatorId, setEditIndicatorId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hud, setHud] = useState<CandleBar | null>(null);
-  const [indicatorHud, setIndicatorHud] = useState<Map<string, Record<string, number>>>(new Map());
-  const [loadingIndicators, setLoadingIndicators] = useState<Set<string>>(() => new Set());
   const [coverInfo, setCoverInfo] = useState<{ text: string; incomplete: boolean } | null>(null);
   const hoverRef = useRef(false);
 
@@ -260,240 +116,9 @@ export default function CandlesPanel() {
   const intervalRef = useRef(interval);
   intervalRef.current = interval;
 
-  // Track lightweight-chart series for indicators
-  const indSeriesMapRef = useRef<Map<string, ISeriesApi<any>[]>>(new Map());
-  // Store point values for fast lookup by timestamp in crosshair move
-  const indValuesMapRef = useRef<Map<string, Map<number, Record<string, number>>>>(new Map());
-  const indicatorLoadGenRef = useRef<Map<string, number>>(new Map());
-  const latestBarsRef = useRef<CandleBar[]>([]);
-  const prevIndicatorsRef = useRef<IndicatorConfig[]>([]);
-  const syncedComputeSigRef = useRef<Map<string, string>>(new Map());
-  const indLoadedRangeRef = useRef<Map<string, { fromSec: number; toSec: number; sig: string }>>(
-    new Map(),
-  );
-  const historyIndSyncTimerRef = useRef<number | null>(null);
-
-  const bumpIndicatorLoadGen = (id: string): number => {
-    const next = (indicatorLoadGenRef.current.get(id) ?? 0) + 1;
-    indicatorLoadGenRef.current.set(id, next);
-    return next;
-  };
-
-  const isIndicatorLoadStale = (id: string, gen: number): boolean =>
-    indicatorLoadGenRef.current.get(id) !== gen;
-
   useEffect(() => {
     saveState(instrument, interval);
   }, [instrument, interval]);
-
-  useEffect(() => {
-    saveIndicatorsState(indicators);
-  }, [indicators]);
-
-  const syncIndicators = useCallback(
-    async (
-      bars: CandleBar[],
-      onlyIds?: string[],
-      options?: { showLoading?: boolean },
-    ) => {
-      if (!instrument || bars.length === 0) return;
-
-      let activeList = indicators.filter((i) => i.visible);
-      if (onlyIds?.length) {
-        const idSet = new Set(onlyIds);
-        activeList = activeList.filter((i) => idSet.has(i.id));
-      }
-      if (activeList.length === 0) {
-        indValuesMapRef.current.clear();
-        setIndicatorHud(new Map());
-        setLoadingIndicators(new Set());
-        return;
-      }
-
-      if (options?.showLoading !== false) {
-        setLoadingIndicators(new Set(activeList.map((i) => i.id)));
-      }
-
-      const updateHudFromLastBar = () => {
-        if (hoverRef.current || bars.length === 0) return;
-        const lastSec = bars[bars.length - 1].time as number;
-        const nextHud = new Map<string, Record<string, number>>();
-        for (const ind of activeList) {
-          const map = indValuesMapRef.current.get(ind.id);
-          const vals = map?.get(lastSec);
-          if (vals) nextHud.set(ind.id, vals);
-        }
-        setIndicatorHud(nextHud);
-      };
-
-      for (const ind of activeList) {
-        const seriesList = indSeriesMapRef.current.get(ind.id) ?? [];
-        if (seriesList.length === 0) {
-          setLoadingIndicators((prev) => {
-            const next = new Set(prev);
-            next.delete(ind.id);
-            return next;
-          });
-          continue;
-        }
-
-        try {
-          const want = rangeFromBarsSec(bars);
-          if (!want) continue;
-          const sig = indicatorComputeSig(ind);
-          const loaded = indLoadedRangeRef.current.get(ind.id);
-          const loadedOk = loaded?.sig === sig ? loaded : undefined;
-          const gaps = missingIndicatorRanges(loadedOk, want);
-
-          const merged =
-            loadedOk
-              ? new Map(indValuesMapRef.current.get(ind.id) ?? [])
-              : new Map<number, Record<string, number>>();
-
-          if (merged.size > 0) {
-            applyIndicatorToSeries(ind, seriesList, pointsForBars(merged, bars));
-          }
-
-          if (gaps.length === 0) {
-            continue;
-          }
-
-          const gen = bumpIndicatorLoadGen(ind.id);
-          let nextLoaded: IndicatorTimeRange | undefined = loadedOk;
-
-          for (const gap of gaps) {
-            const dates = rangeToDates(gap);
-            const res = await computeIndicatorForDisplay({
-              uid: instrument.uid,
-              interval,
-              ind,
-              from: dates.from,
-              to: dates.to,
-              padWarmup: !loadedOk,
-            });
-
-            if (isIndicatorLoadStale(ind.id, gen)) break;
-
-            for (const pt of res) {
-              merged.set(pt.timeSec, pt.values);
-            }
-            nextLoaded = nextLoaded ? unionIndicatorRanges(nextLoaded, gap) : gap;
-            indValuesMapRef.current.set(ind.id, merged);
-            if (nextLoaded) {
-              indLoadedRangeRef.current.set(ind.id, { ...nextLoaded, sig });
-            }
-            applyIndicatorToSeries(ind, seriesList, pointsForBars(merged, bars));
-          }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.error("Indicator sync error:", ind.name, msg);
-          setError(`Индикатор ${ind.name}: ${msg}`);
-        } finally {
-          setLoadingIndicators((prev) => {
-            const next = new Set(prev);
-            next.delete(ind.id);
-            return next;
-          });
-        }
-      }
-
-      updateHudFromLastBar();
-    },
-    [indicators, instrument, interval],
-  );
-
-  const syncIndicatorsRef = useRef(syncIndicators);
-  syncIndicatorsRef.current = syncIndicators;
-
-  // Sync lightweight-charts series instances whenever indicators configuration changes
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-
-    const existingMap = indSeriesMapRef.current;
-    const nextMap = new Map<string, ISeriesApi<any>[]>();
-
-    const hasOscillators = indicators.some((i) => i.visible && isOscillator(i.type, i.name));
-
-    // Adjust candle margin if oscillators are present
-    if (candleRef.current) {
-      candleRef.current.priceScale().applyOptions({
-        scaleMargins: { top: 0.08, bottom: hasOscillators ? 0.32 : 0.22 },
-      });
-    }
-
-    const prev = prevIndicatorsRef.current;
-
-    for (const ind of indicators) {
-      const existing = existingMap.get(ind.id);
-      const isOsc = isOscillator(ind.type, ind.name);
-      const old = prev.find((item) => item.id === ind.id);
-      const typeChanged = Boolean(old && old.type !== ind.type);
-
-      if (!ind.visible) {
-        // Оверлеи оставляем на шкале свечей и только прячем.
-        // Осцилляторы убираем, чтобы не оставалась пустая нижняя шкала.
-        if (existing && existing.length > 0 && !isOsc && !typeChanged) {
-          applyIndicatorAppearance(existing, ind, false);
-          nextMap.set(ind.id, existing);
-        }
-        continue;
-      }
-
-      const scaleId = isOsc ? oscillatorScaleId(ind.id) : "right";
-      let seriesList: ISeriesApi<"Line" | "Histogram">[];
-
-      if (existing && existing.length > 0 && !typeChanged) {
-        seriesList = existing;
-        applyIndicatorAppearance(seriesList, ind, true);
-      } else {
-        if (existing && existing.length > 0) {
-          detachSeries(chart, existing);
-        }
-        seriesList = createIndicatorSeries(chart, ind, scaleId);
-      }
-
-      if (isOsc && seriesList.length > 0) {
-        applyOscillatorScale(chart, scaleId);
-      }
-
-      nextMap.set(ind.id, seriesList);
-    }
-
-    for (const [id, seriesList] of existingMap.entries()) {
-      if (!nextMap.has(id)) {
-        detachSeries(chart, seriesList);
-        syncedComputeSigRef.current.delete(id);
-        if (!indicators.some((item) => item.id === id)) {
-          indLoadedRangeRef.current.delete(id);
-          indValuesMapRef.current.delete(id);
-        }
-      }
-    }
-
-    indSeriesMapRef.current = nextMap;
-
-    const changedIds: string[] = [];
-    for (const ind of indicators) {
-      if (!ind.visible) continue;
-      const old = prev.find((item) => item.id === ind.id);
-      const isOsc = isOscillator(ind.type, ind.name);
-      const sig = `${ind.type}:${ind.persist}:${JSON.stringify(ind.params)}`;
-      const synced = syncedComputeSigRef.current.get(ind.id);
-      if (!old || synced !== sig || (isOsc && !old.visible)) {
-        changedIds.push(ind.id);
-        syncedComputeSigRef.current.set(ind.id, sig);
-      }
-    }
-    prevIndicatorsRef.current = indicators;
-
-    // Пересчитываем только добавленные/изменённые индикаторы (не весь график).
-    if (latestBarsRef.current.length > 0 && changedIds.length > 0) {
-      void syncIndicatorsRef.current(latestBarsRef.current, changedIds, {
-        showLoading: true,
-      });
-    }
-  }, [indicators]);
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -517,8 +142,7 @@ export default function CandlesPanel() {
       chart,
       candles,
       volume,
-      onBars: (bars, meta) => {
-        latestBarsRef.current = bars;
+      onBars: (bars) => {
         timesRef.current = bars.map((bar) => bar.time as number);
         const last = bars[bars.length - 1];
         if (last) {
@@ -527,27 +151,6 @@ export default function CandlesPanel() {
         }
         setError("");
         paintCoverage();
-
-        // Подгрузка индикаторов по видимому диапазону: один RPC на индикатор.
-        if (indicatorsRef.current.some((i) => i.visible)) {
-          const run = () => {
-            void syncIndicatorsRef.current(latestBarsRef.current, undefined, {
-              showLoading: false,
-            });
-          };
-          if (historyIndSyncTimerRef.current != null) {
-            window.clearTimeout(historyIndSyncTimerRef.current);
-            historyIndSyncTimerRef.current = null;
-          }
-          if (meta.firstLoad) {
-            run();
-          } else {
-            historyIndSyncTimerRef.current = window.setTimeout(() => {
-              historyIndSyncTimerRef.current = null;
-              run();
-            }, 180);
-          }
-        }
       },
       onLoading: setLoading,
       onError: (err) => {
@@ -564,23 +167,13 @@ export default function CandlesPanel() {
       if (!param.time || !param.point) {
         hoverRef.current = false;
         const last = store.lastBar();
-        if (last) {
-          setHud(last);
-          const tSec = last.time as number;
-          const nextHud = new Map<string, Record<string, number>>();
-          for (const [indId, map] of indValuesMapRef.current.entries()) {
-            const vals = map.get(tSec);
-            if (vals) nextHud.set(indId, vals);
-          }
-          setIndicatorHud(nextHud);
-        }
+        if (last) setHud(last);
         return;
       }
       const data = param.seriesData.get(candles) as CandlestickData<UTCTimestamp> | undefined;
       const vol = param.seriesData.get(volume) as HistogramData<UTCTimestamp> | undefined;
       if (!data) return;
       hoverRef.current = true;
-      const tSec = data.time as number;
       setHud({
         time: data.time as UTCTimestamp,
         open: data.open,
@@ -589,22 +182,10 @@ export default function CandlesPanel() {
         close: data.close,
         volume: vol?.value ?? 0,
       });
-
-      // Update indicator HUD values under crosshair
-      const nextHud = new Map<string, Record<string, number>>();
-      for (const [indId, map] of indValuesMapRef.current.entries()) {
-        const vals = map.get(tSec);
-        if (vals) nextHud.set(indId, vals);
-      }
-      setIndicatorHud(nextHud);
     };
     chart.subscribeCrosshairMove(onMove);
 
     return () => {
-      if (historyIndSyncTimerRef.current != null) {
-        window.clearTimeout(historyIndSyncTimerRef.current);
-        historyIndSyncTimerRef.current = null;
-      }
       chart.unsubscribeCrosshairMove(onMove);
       disposeViewport();
       chart.remove();
@@ -613,10 +194,6 @@ export default function CandlesPanel() {
       volumeRef.current = null;
       storeRef.current = null;
       timesRef.current = [];
-      indSeriesMapRef.current.clear();
-      indValuesMapRef.current.clear();
-      indLoadedRangeRef.current.clear();
-      latestBarsRef.current = [];
     };
   }, []);
 
@@ -629,22 +206,11 @@ export default function CandlesPanel() {
 
     hoverRef.current = false;
     setHud(null);
-    setIndicatorHud(new Map());
-    setLoadingIndicators(new Set());
-    indicatorLoadGenRef.current.clear();
-    indLoadedRangeRef.current.clear();
     setError("");
     setCoverInfo(null);
     candles.setData([]);
     volume.setData([]);
     timesRef.current = [];
-    latestBarsRef.current = [];
-
-    // Clear indicator series
-    for (const seriesList of indSeriesMapRef.current.values()) {
-      for (const s of seriesList) s.setData([]);
-    }
-    indValuesMapRef.current.clear();
 
     if (!instrument) {
       store.reset("", interval);
@@ -657,26 +223,7 @@ export default function CandlesPanel() {
     void store.loadInitial(initialVisibleCount(wrap?.clientWidth || 800));
   }, [instrument, interval]);
 
-  const handleAddIndicator = useCallback((config: IndicatorConfig) => {
-    setIndicators((prev) => [...prev, config]);
-  }, []);
-
-  const handleUpdateIndicator = useCallback((config: IndicatorConfig) => {
-    setIndicators((prev) => prev.map((i) => (i.id === config.id ? config : i)));
-  }, []);
-
-  const handleRemoveIndicator = (id: string) => {
-    setIndicators((prev) => prev.filter((i) => i.id !== id));
-  };
-
-  const handleToggleVisibility = (id: string) => {
-    setIndicators((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, visible: !i.visible } : i)),
-    );
-  };
-
   const up = hud ? hud.close >= hud.open : true;
-  const activeCount = indicators.filter((i) => i.visible).length;
 
   return (
     <section className="panel-page candles-panel">
@@ -733,21 +280,6 @@ export default function CandlesPanel() {
               );
             })}
           </div>
-
-          <button
-            type="button"
-            className={`indicators-btn-trigger ${activeCount > 0 ? "has-active" : ""}`}
-            onClick={() => {
-              setEditIndicatorId(null);
-              setModalOpen(true);
-            }}
-            title="Выбор и настройка индикаторов (RSI, SMA, EMA, MACD, BB)"
-          >
-            <span>+ Индикаторы</span>
-            {activeCount > 0 ? (
-              <span className="indicators-badge-count">{activeCount}</span>
-            ) : null}
-          </button>
         </div>
 
         {interval !== INTERVAL_1MIN && interval !== INTERVAL_1DAY ? (
@@ -779,90 +311,6 @@ export default function CandlesPanel() {
           </p>
         )}
 
-        {/* Indicators HUD Values row */}
-        {indicatorHud.size > 0 ? (
-          <div className="candles-indicators-hud">
-            {indicators
-              .filter((ind) => ind.visible && indicatorHud.has(ind.id))
-              .map((ind) => {
-                const vals = indicatorHud.get(ind.id)!;
-                return (
-                  <div key={ind.id} className="ind-hud-tag">
-                    <span
-                      className="ind-hud-dot"
-                      style={{ backgroundColor: ind.color }}
-                    />
-                    <span className="ind-hud-name">{ind.name}:</span>
-                    <span className="ind-hud-val">
-                      {Object.entries(vals)
-                        .map(([k, v]) => (k === "value" ? v.toFixed(2) : `${k}:${v.toFixed(2)}`))
-                        .join(" ")}
-                    </span>
-                  </div>
-                );
-              })}
-          </div>
-        ) : null}
-
-        {/* Indicators Active Legend Chips */}
-        {indicators.length > 0 ? (
-          <div className="candles-indicators-chips-bar">
-            {indicators.map((ind) => (
-              <div
-                key={ind.id}
-                className={`ind-chip ${!ind.visible ? "is-hidden" : ""} ${
-                  loadingIndicators.has(ind.id) ? "is-loading" : ""
-                }`}
-              >
-                <span
-                  className="ind-chip-dot"
-                  style={{ backgroundColor: ind.color }}
-                />
-                <span className="ind-chip-title">
-                  {ind.name}
-                  {loadingIndicators.has(ind.id) ? (
-                    <span className="ind-chip-loading"> загрузка…</span>
-                  ) : null}
-                  <span className="ind-chip-params">
-                    (
-                    {Object.entries(ind.params)
-                      .map(([k, v]) => `${k}:${v}`)
-                      .join(",")}
-                    )
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  className="ind-chip-btn"
-                  title="Настройки"
-                  onClick={() => {
-                    setEditIndicatorId(ind.id);
-                    setModalOpen(true);
-                  }}
-                >
-                  ⚙
-                </button>
-                <button
-                  type="button"
-                  className="ind-chip-btn"
-                  title={ind.visible ? "Скрыть" : "Показать"}
-                  onClick={() => handleToggleVisibility(ind.id)}
-                >
-                  {ind.visible ? "👁" : "🚫"}
-                </button>
-                <button
-                  type="button"
-                  className="ind-chip-btn danger"
-                  title="Удалить"
-                  onClick={() => handleRemoveIndicator(ind.id)}
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
         {error ? <p className="error candles-error">{error}</p> : null}
       </div>
 
@@ -874,20 +322,6 @@ export default function CandlesPanel() {
           </div>
         ) : null}
       </div>
-
-      <IndicatorsModal
-        isOpen={modalOpen}
-        onClose={() => {
-          setModalOpen(false);
-          setEditIndicatorId(null);
-        }}
-        indicators={indicators}
-        initialEditId={editIndicatorId}
-        onAddIndicator={handleAddIndicator}
-        onUpdateIndicator={handleUpdateIndicator}
-        onRemoveIndicator={handleRemoveIndicator}
-        onToggleVisibility={handleToggleVisibility}
-      />
     </section>
   );
 }

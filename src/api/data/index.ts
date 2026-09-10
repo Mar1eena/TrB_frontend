@@ -46,6 +46,54 @@ function fillFilter<T extends FilterLike>(filter: T, q: string, limit: number): 
   return filter;
 }
 
+/** Параметры постраничной выборки для больших таблиц. */
+export type ListPageParams = {
+  offset: number;
+  limit: number;
+  q?: string;
+  sortBy?: string;
+  sortDesc?: boolean;
+  fieldFilters?: Record<string, string>;
+};
+
+/** Заполняет общие поля ListFilter (q/limit/offset/sort/field_filters). */
+function fillPagedFilter<
+  F extends {
+    setQ(v: string): unknown;
+    setLimit(v: number): unknown;
+    setOffset(v: number): unknown;
+    setSortBy(v: string): unknown;
+    setSortDesc(v: boolean): unknown;
+  },
+  FF extends { setField(v: string): unknown; setValue(v: string): unknown },
+>(filter: F, makeFieldFilter: () => FF, addFieldFilter: (ff: FF) => unknown, p: ListPageParams): F {
+  if (p.q && p.q.trim()) filter.setQ(p.q.trim());
+  if (p.limit > 0) filter.setLimit(p.limit);
+  if (p.offset > 0) filter.setOffset(p.offset);
+  if (p.sortBy) filter.setSortBy(p.sortBy);
+  if (p.sortDesc) filter.setSortDesc(true);
+  for (const [field, value] of Object.entries(p.fieldFilters ?? {})) {
+    const v = value.trim();
+    if (!v) continue;
+    const ff = makeFieldFilter();
+    ff.setField(field);
+    ff.setValue(v);
+    addFieldFilter(ff);
+  }
+  return filter;
+}
+
+function filtersKey(p: ListPageParams): string {
+  return JSON.stringify([
+    p.offset,
+    p.limit,
+    p.q ?? "",
+    p.sortBy ?? "",
+    p.sortDesc ?? false,
+    p.fieldFilters ?? {},
+  ]);
+}
+
 export type Instrument = {
   uid: string;
   figi: string;
@@ -163,6 +211,21 @@ function mapInstrument(
   };
 }
 
+function mapInstrumentRow(row: {
+  getShare: () => Share | undefined;
+  getVersion: () => Parameters<typeof formatTimestamp>[0];
+  getVersionCount: () => number;
+}): Instrument[] {
+  const share = row.getShare();
+  if (!share) return [];
+  return [
+    mapInstrument(share, {
+      version: formatTimestamp(row.getVersion()) || undefined,
+      version_count: row.getVersionCount(),
+    }),
+  ];
+}
+
 export async function listInstruments(
   q = "",
   limit = 2000,
@@ -176,16 +239,35 @@ export async function listInstruments(
     if (lite) req.setLite(true);
     try {
       const resp = await instrumentsClient.listInstruments(req);
-      return resp.getItemsList().flatMap((row) => {
-        const share = row.getShare();
-        if (!share) return [];
-        return [
-          mapInstrument(share, {
-            version: formatTimestamp(row.getVersion()) || undefined,
-            version_count: row.getVersionCount(),
-          }),
-        ];
-      });
+      return resp.getItemsList().flatMap(mapInstrumentRow);
+    } catch (err) {
+      throw grpcError(err, "Не удалось загрузить инструменты");
+    }
+  });
+}
+
+/** Постраничная выборка инструментов с серверными фильтрами/сортировкой. */
+export async function listInstrumentsPage(
+  p: ListPageParams & { lite?: boolean },
+): Promise<{ items: Instrument[]; total: number }> {
+  const key = `ListInstrumentsPage:${p.lite ? 1 : 0}:${filtersKey(p)}`;
+  return coalesce(key, async () => {
+    const req = new instrPb.ListInstrumentsRequest();
+    const filter = new instrPb.ListFilter();
+    fillPagedFilter(
+      filter,
+      () => new instrPb.FieldFilter(),
+      (ff) => filter.addFieldFilters(ff),
+      p,
+    );
+    req.setFilter(filter);
+    if (p.lite) req.setLite(true);
+    try {
+      const resp = await instrumentsClient.listInstruments(req);
+      return {
+        items: resp.getItemsList().flatMap(mapInstrumentRow),
+        total: resp.getTotal(),
+      };
     } catch (err) {
       throw grpcError(err, "Не удалось загрузить инструменты");
     }
@@ -256,6 +338,21 @@ export async function syncSchedulerTargets(
   }
 }
 
+function mapLastDownload(item: LastDownload) {
+  return {
+    uid: item.getUid(),
+    figi: item.getFigi(),
+    ticker: item.getTicker(),
+    name: item.getName(),
+    interval: item.getInterval() || null,
+    last_start: formatTimestamp(item.getLastStart()),
+    last_end: formatTimestamp(item.getLastEnd()),
+    has_download: item.getHasDownload(),
+  };
+}
+
+export type LastDownloadRow = ReturnType<typeof mapLastDownload>;
+
 export async function listLastDownloads(
   q = "",
   limit = 500,
@@ -266,16 +363,35 @@ export async function listLastDownloads(
     req.setFilter(fillFilter(new hcPb.ListFilter(), q, limit));
     try {
       const resp = await historicCandleClient.listLastDownloads(req);
-      return resp.getItemsList().map((item: LastDownload) => ({
-        uid: item.getUid(),
-        figi: item.getFigi(),
-        ticker: item.getTicker(),
-        name: item.getName(),
-        interval: item.getInterval() || null,
-        last_start: formatTimestamp(item.getLastStart()),
-        last_end: formatTimestamp(item.getLastEnd()),
-        has_download: item.getHasDownload(),
-      }));
+      return resp.getItemsList().map(mapLastDownload);
+    } catch (err) {
+      throw grpcError(err, "Не удалось загрузить последние загрузки");
+    }
+  });
+}
+
+/** Постраничная выборка истории загрузок с серверными фильтрами/сортировкой. */
+export async function listLastDownloadsPage(
+  p: ListPageParams & { intervalFilter?: number },
+): Promise<{ items: LastDownloadRow[]; total: number }> {
+  const key = `ListLastDownloadsPage:${p.intervalFilter ?? 0}:${filtersKey(p)}`;
+  return coalesce(key, async () => {
+    const req = new hcPb.ListLastDownloadsRequest();
+    const filter = new hcPb.ListFilter();
+    fillPagedFilter(
+      filter,
+      () => new hcPb.FieldFilter(),
+      (ff) => filter.addFieldFilters(ff),
+      p,
+    );
+    if (p.intervalFilter && p.intervalFilter > 0) filter.setIntervalFilter(p.intervalFilter);
+    req.setFilter(filter);
+    try {
+      const resp = await historicCandleClient.listLastDownloads(req);
+      return {
+        items: resp.getItemsList().map(mapLastDownload),
+        total: resp.getTotal(),
+      };
     } catch (err) {
       throw grpcError(err, "Не удалось загрузить последние загрузки");
     }
