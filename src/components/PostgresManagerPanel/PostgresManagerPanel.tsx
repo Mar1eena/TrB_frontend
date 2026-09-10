@@ -54,10 +54,9 @@ import {
 } from "../../api/postgresql";
 import {
   forgetPostgresAddress,
-  getPostgresConnection,
-  onDbConnectionChange,
   rememberPostgresAddress,
   setPostgresConnection,
+  usePostgresConnection,
   visiblePostgresConnections,
   type DbConnection,
 } from "../../api/common/connection";
@@ -296,12 +295,13 @@ export default function PostgresManagerPanel() {
   const notify = useNotify();
   const [info, setInfo] = useState<PgServerInfo | null>(null);
   const [infoChecked, setInfoChecked] = useState(false);
-  const [connectionName, setConnectionName] = useState(getPostgresConnection);
+  const { name: connectionName, custom: customConnections, hidden: hiddenConnections } =
+    usePostgresConnection();
   const [connections, setConnections] = useState<DbConnection[]>([]);
-  const [customEpoch, setCustomEpoch] = useState(0);
   const connectionChoices = useMemo(
     () => visiblePostgresConnections(connections),
-    [connections, customEpoch],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [connections, customConnections, hiddenConnections],
   );
   const [activeTab, setActiveTab] = useState<MainTab>("explorer");
 
@@ -604,8 +604,6 @@ export default function PostgresManagerPanel() {
     }
   }, []);
 
-  useEffect(() => onDbConnectionChange(() => setConnectionName(getPostgresConnection())), []);
-
   useEffect(() => {
     void listPostgresConnections().then((items) => {
       setConnections(items);
@@ -807,13 +805,11 @@ export default function PostgresManagerPanel() {
             placeholder="127.0.0.1:5435 или host:5432"
             onChange={(name) => {
               rememberPostgresAddress(name);
-              setCustomEpoch((n) => n + 1);
               setPostgresConnection(name);
             }}
             onRemove={(name) => {
               const remaining = connectionChoices.filter((item) => item.name !== name && item.host !== name);
               forgetPostgresAddress(name);
-              setCustomEpoch((n) => n + 1);
               if (connectionName === name) {
                 setPostgresConnection(remaining[0]?.name ?? "");
               }

@@ -41,10 +41,9 @@ import {
 } from "../../api/clickhouse";
 import {
   forgetClickHouseAddress,
-  getClickHouseConnection,
-  onDbConnectionChange,
   rememberClickHouseAddress,
   setClickHouseConnection,
+  useClickHouseConnection,
   visibleClickHouseConnections,
   type DbConnection,
 } from "../../api/common/connection";
@@ -324,12 +323,14 @@ export default function ClickHouseManagerPanel() {
   const notify = useNotify();
   const [info, setInfo] = useState<ChServerInfo | null>(null);
   const [infoChecked, setInfoChecked] = useState(false);
-  const [connectionName, setConnectionName] = useState(getClickHouseConnection);
+  const { name: connectionName, custom: customConnections, hidden: hiddenConnections } =
+    useClickHouseConnection();
   const [connections, setConnections] = useState<DbConnection[]>([]);
-  const [customEpoch, setCustomEpoch] = useState(0);
   const connectionChoices = useMemo(
     () => visibleClickHouseConnections(connections),
-    [connections, customEpoch],
+    // custom/hidden в зависимостях — форс-пересчёт после remember/forget.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [connections, customConnections, hiddenConnections],
   );
   const [activeTab, setActiveTab] = useState<MainTab>("explorer");
   const [databases, setDatabases] = useState<ChDatabase[]>([]);
@@ -578,8 +579,6 @@ export default function ClickHouseManagerPanel() {
     setParts([]);
   }, [selectedDb]);
 
-  useEffect(() => onDbConnectionChange(() => setConnectionName(getClickHouseConnection())), []);
-
   useEffect(() => {
     void listClickHouseConnections().then((items) => {
       setConnections(items);
@@ -750,13 +749,11 @@ export default function ClickHouseManagerPanel() {
             placeholder="localhost:9001 или http://localhost:8124"
             onChange={(name) => {
               rememberClickHouseAddress(name);
-              setCustomEpoch((n) => n + 1);
               setClickHouseConnection(name);
             }}
             onRemove={(name) => {
               const remaining = connectionChoices.filter((item) => item.name !== name && item.host !== name);
               forgetClickHouseAddress(name);
-              setCustomEpoch((n) => n + 1);
               if (connectionName === name) {
                 setClickHouseConnection(remaining[0]?.name ?? "");
               }
