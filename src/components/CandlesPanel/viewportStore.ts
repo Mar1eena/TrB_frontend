@@ -31,10 +31,21 @@ export const HISTORY_FROM_SEC = Date.UTC(1971, 0, 2) / 1000;
 
 type PageDir = "left" | "right";
 
+/** Границы окна истории: по умолчанию — вся история до «сейчас» (живой график). */
+export type ViewportBounds = {
+  /** Нижняя граница (сек, unix). По умолчанию HISTORY_FROM_SEC. */
+  fromSec?: number;
+  /** Верхняя граница (сек, unix). По умолчанию «сейчас». Нужна бэктесту, где
+   * график не должен догружаться правее конца выбранного периода. */
+  toSec?: number;
+};
+
 export class CandleViewportStore {
   private bars = new Map<number, CandleBar>();
   private instrumentId = "";
   private interval = 1;
+  private boundsMin: number | null = null;
+  private boundsMax: number | null = null;
   private gen = 0;
   private visibleCount = 80;
   private timer: number | null = null;
@@ -53,10 +64,12 @@ export class CandleViewportStore {
     this.cb = cb;
   }
 
-  reset(instrumentId: string, interval: number): void {
+  reset(instrumentId: string, interval: number, bounds?: ViewportBounds): void {
     this.gen += 1;
     this.instrumentId = instrumentId;
     this.interval = interval;
+    this.boundsMin = bounds?.fromSec ?? null;
+    this.boundsMax = bounds?.toSec ?? null;
     this.bars.clear();
     this.leftBusy = false;
     this.rightBusy = false;
@@ -153,6 +166,8 @@ export class CandleViewportStore {
 
     const step = intervalMeta(this.interval).seconds;
     const nowSec = Date.now() / 1000;
+    const minBound = this.boundsMin ?? HISTORY_FROM_SEC;
+    const maxBound = this.boundsMax ?? nowSec + 60;
     const min = this.minTime();
     const max = this.maxTime();
     const limit = this.pageLimit();
@@ -162,13 +177,13 @@ export class CandleViewportStore {
 
     if (dir === "left") {
       newestFirst = true;
-      fromSec = HISTORY_FROM_SEC;
-      toSec = min != null ? min - 1 : nowSec + 60;
+      fromSec = minBound;
+      toSec = min != null ? min - 1 : maxBound;
     } else {
       newestFirst = false;
-      fromSec = max != null ? max + 1 : nowSec - limit * step;
-      toSec = nowSec + 60;
-      if (max != null && max >= nowSec - step) {
+      fromSec = max != null ? max + 1 : Math.max(minBound, maxBound - limit * step);
+      toSec = maxBound;
+      if (max != null && max >= maxBound - step) {
         this.rightExhausted = true;
         this.rightBusy = false;
         if (!this.leftBusy) this.cb.onLoading(false);
@@ -200,7 +215,7 @@ export class CandleViewportStore {
         else this.rightExhausted = true;
       }
 
-      if (firstLoad && this.maxTime() != null && (this.maxTime() as number) >= nowSec - step * 2) {
+      if (firstLoad && this.maxTime() != null && (this.maxTime() as number) >= maxBound - step * 2) {
         this.rightExhausted = true;
       }
 

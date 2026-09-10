@@ -1,15 +1,8 @@
-import type { IndicatorsClient as IndicatorsClientType } from "@marleena/trb-proto/indicators/IndicatorsServiceClientPb";
-import { IndicatorsClient } from "@marleena/trb-proto/indicators/IndicatorsServiceClientPb";
+import { Indicator_SettingsClient } from "@marleena/trb-proto/indicators/IndicatorsServiceClientPb";
 import * as indPbModule from "@marleena/trb-proto/indicators/indicators_pb";
-import * as grpcWeb from "grpc-web";
+import * as paramsPbModule from "@marleena/trb-proto/indicators/params_pb";
 import { getGrpcBaseUrl } from "../common/client";
 import { pickPbCtor, resolveProtoNs } from "../common/protoNs";
-
-/** Force evaluation of the CJS `default` interop object (Vite prebundle). */
-void (indPbModule as { default?: unknown }).default;
-
-type ListIndicatorValuesRequest = InstanceType<(typeof indPbModule)["ListIndicatorValuesRequest"]>;
-type ListIndicatorValuesResponse = InstanceType<(typeof indPbModule)["ListIndicatorValuesResponse"]>;
 
 function indicatorsGlobalNs(): unknown {
   return (globalThis as { proto?: { trb?: { indicators?: { v1?: unknown } } } }).proto?.trb
@@ -17,99 +10,68 @@ function indicatorsGlobalNs(): unknown {
 }
 
 export function indicatorsProto(): typeof indPbModule {
-  return resolveProtoNs(indPbModule, indicatorsGlobalNs(), [
-    "ComputeForInstrumentRequest",
-    "ListSupportedRequest",
-    "ListIndicatorValuesRequest",
-  ]);
+  return resolveProtoNs(indPbModule, indicatorsGlobalNs(), ["Settings", "SettingsHash", "UpdateSettingsResponse"]);
+}
+
+export function indicatorParamsProto(): typeof paramsPbModule {
+  return resolveProtoNs(paramsPbModule, indicatorsGlobalNs(), ["IndicatorSettings", "RsiParams"]);
 }
 
 export const indPb = indicatorsProto();
+export const indParamsPb = indicatorParamsProto();
 
-export const indicatorsClient: IndicatorsClientType = new IndicatorsClient(getGrpcBaseUrl());
+export const indicatorSettingsClient: Indicator_SettingsClient = new Indicator_SettingsClient(getGrpcBaseUrl());
 
-let listIndicatorValuesDescriptor: grpcWeb.MethodDescriptor<
-  ListIndicatorValuesRequest,
-  ListIndicatorValuesResponse
-> | null = null;
-let listIndicatorValuesGrpcClient: grpcWeb.GrpcWebClientBase | null = null;
-
-function listIndicatorValuesResponseCtor(): {
-  deserializeBinary: (bytes: Uint8Array) => ListIndicatorValuesResponse;
-} {
-  const Ctor = pickPbCtor(indPbModule, indicatorsGlobalNs(), "ListIndicatorValuesResponse", [
-    "deserializeBinary",
-    "getPointsList",
-  ]);
+function requireCtor<T>(name: string, requiredMethods: string[] = []): new () => T {
+  const Ctor = pickPbCtor(indPbModule, indicatorsGlobalNs(), name, requiredMethods)
+    ?? pickPbCtor(paramsPbModule, indicatorsGlobalNs(), name, requiredMethods);
   if (!Ctor) {
-    throw new Error("ListIndicatorValuesResponse нет в proto-клиенте — перезапустите Vite");
+    throw new Error(`${name} нет в proto-клиенте — перезапустите Vite`);
   }
-  return Ctor as {
-    deserializeBinary: (bytes: Uint8Array) => ListIndicatorValuesResponse;
-  };
+  return Ctor as unknown as new () => T;
 }
 
-function getListIndicatorValuesDescriptor(): grpcWeb.MethodDescriptor<
-  ListIndicatorValuesRequest,
-  ListIndicatorValuesResponse
-> {
-  if (!listIndicatorValuesDescriptor) {
-    const RequestCtor = pickPbCtor(indPbModule, indicatorsGlobalNs(), "ListIndicatorValuesRequest", [
-      "serializeBinary",
-    ]);
-    const ResponseCtor = listIndicatorValuesResponseCtor();
-    if (!RequestCtor) {
-      throw new Error("ListIndicatorValuesRequest нет в proto-клиенте — перезапустите Vite");
-    }
-    listIndicatorValuesDescriptor = new grpcWeb.MethodDescriptor(
-      "/trb.indicators.v1.Indicators/ListIndicatorValues",
-      grpcWeb.MethodType.UNARY,
-      RequestCtor as unknown as new () => ListIndicatorValuesRequest,
-      ResponseCtor as unknown as new () => ListIndicatorValuesResponse,
-      (request) => request.serializeBinary(),
-      ResponseCtor.deserializeBinary,
-    );
-  }
-  return listIndicatorValuesDescriptor;
-}
-
-/** Обходит устаревший IndicatorsClient без listIndicatorValues (кэш Vite / CJS interop). */
-export function invokeListIndicatorValues(
-  request: ListIndicatorValuesRequest,
-): Promise<ListIndicatorValuesResponse> {
-  if (!listIndicatorValuesGrpcClient) {
-    listIndicatorValuesGrpcClient = new grpcWeb.GrpcWebClientBase({ format: "binary" });
-  }
-  return listIndicatorValuesGrpcClient.unaryCall(
-    `${getGrpcBaseUrl()}/trb.indicators.v1.Indicators/ListIndicatorValues`,
-    request,
-    {},
-    getListIndicatorValuesDescriptor(),
-  );
-}
-
-export function newComputeForInstrumentRequest() {
-  const Ctor = pickPbCtor(indPbModule, indicatorsGlobalNs(), "ComputeForInstrumentRequest", [
-    "setUid",
-    "setPersist",
-    "setMaxResponsePoints",
-  ]);
-  if (!Ctor) {
-    throw new Error("ComputeForInstrumentRequest нет в proto-клиенте — перезапустите Vite");
-  }
-  return new Ctor() as InstanceType<(typeof indPbModule)["ComputeForInstrumentRequest"]>;
-}
-
-export function newListIndicatorValuesRequest() {
-  const Ctor = pickPbCtor(indPbModule, indicatorsGlobalNs(), "ListIndicatorValuesRequest", [
+export function newSettingsMessage() {
+  const Ctor = requireCtor<InstanceType<(typeof indPbModule)["Settings"]>>("Settings", [
     "setUid",
     "setInterval",
-    "setFrom",
-    "setTo",
-    "setType",
+    "setSettings",
   ]);
-  if (!Ctor) {
-    throw new Error("ListIndicatorValuesRequest нет в proto-клиенте — перезапустите Vite");
-  }
-  return new Ctor() as InstanceType<(typeof indPbModule)["ListIndicatorValuesRequest"]>;
+  return new Ctor();
+}
+
+export function newIndicatorSettingsMessage() {
+  const Ctor = requireCtor<InstanceType<(typeof paramsPbModule)["IndicatorSettings"]>>("IndicatorSettings", [
+    "setRsi",
+    "setMacd",
+  ]);
+  return new Ctor();
+}
+
+export function newRsiParams() {
+  return new (requireCtor<InstanceType<(typeof paramsPbModule)["RsiParams"]>>("RsiParams", ["setPeriod"]))();
+}
+
+export function newSmaParams() {
+  return new (requireCtor<InstanceType<(typeof paramsPbModule)["SmaParams"]>>("SmaParams", ["setPeriod"]))();
+}
+
+export function newEmaParams() {
+  return new (requireCtor<InstanceType<(typeof paramsPbModule)["EmaParams"]>>("EmaParams", ["setPeriod"]))();
+}
+
+export function newMacdParams() {
+  return new (requireCtor<InstanceType<(typeof paramsPbModule)["MacdParams"]>>("MacdParams", [
+    "setFastPeriod",
+    "setSlowPeriod",
+    "setSignalPeriod",
+  ]))();
+}
+
+export function newBbandsParams() {
+  return new (requireCtor<InstanceType<(typeof paramsPbModule)["BbandsParams"]>>("BbandsParams", [
+    "setPeriod",
+    "setNbDevUp",
+    "setNbDevDn",
+  ]))();
 }

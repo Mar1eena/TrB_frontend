@@ -1,11 +1,14 @@
 import { parseTimestamp } from "../common/converters";
 import { wrapRpcError } from "../common/errors";
 import {
-  indPb,
-  indicatorsClient,
-  invokeListIndicatorValues,
-  newComputeForInstrumentRequest,
-  newListIndicatorValuesRequest,
+  indicatorSettingsClient,
+  newBbandsParams,
+  newEmaParams,
+  newIndicatorSettingsMessage,
+  newMacdParams,
+  newRsiParams,
+  newSettingsMessage,
+  newSmaParams,
 } from "./client";
 
 export type IndicatorInfo = {
@@ -21,20 +24,6 @@ export type IndicatorPoint = {
   values: Record<string, number>;
 };
 
-export type ComputeResult = {
-  type: number;
-  params: Record<string, number>;
-  points: IndicatorPoint[];
-  totalPoints: number;
-};
-
-export type ListIndicatorValuesResult = {
-  type: number;
-  params: Record<string, number>;
-  points: IndicatorPoint[];
-  hasMore: boolean;
-};
-
 export interface IndicatorConfig {
   id: string;
   type: number;
@@ -46,188 +35,12 @@ export interface IndicatorConfig {
   lineWidth?: number;
 }
 
-function mapToRecord(map: { getEntryList(): Array<[string, number]> }): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const [key, value] of map.getEntryList()) {
-    out[key] = value;
-  }
-  return out;
-}
-
-function formatPointTime(ts: { getSeconds?: () => number } | undefined): string {
-  const sec = ts?.getSeconds?.() ?? 0;
-  if (!sec) return "";
-  return new Date(sec * 1000).toISOString();
-}
-
-let supportedCache: IndicatorInfo[] | null = null;
-let supportedInflight: Promise<IndicatorInfo[]> | null = null;
-
-export async function listSupportedIndicators(): Promise<IndicatorInfo[]> {
-  if (supportedCache && supportedCache.length > 0) return supportedCache;
-  if (supportedInflight) return supportedInflight;
-  supportedInflight = (async () => {
-    try {
-      const resp = await indicatorsClient.listSupported(new indPb.ListSupportedRequest());
-      const items = resp.getIndicatorsList().map((item) => ({
-        type: item.getType(),
-        name: item.getName(),
-        minBars: item.getMinBars(),
-        defaultParams: mapToRecord(item.getDefaultParamsMap()),
-      }));
-      if (items.length > 0) supportedCache = items;
-      return items;
-    } catch (err) {
-      throw wrapRpcError(err);
-    } finally {
-      supportedInflight = null;
-    }
-  })();
-  return supportedInflight;
-}
-
-const computeInflight = new Map<string, Promise<ComputeResult>>();
-
-function computeKey(params: {
-  uid: string;
-  interval: number;
-  from: Date;
-  to: Date;
-  type: number;
-  indicatorParams: Record<string, number>;
-  persist: boolean;
-  maxResponsePoints?: number;
-}): string {
-  return [
-    params.uid,
-    params.interval,
-    Math.floor(params.from.getTime() / 1000),
-    Math.floor(params.to.getTime() / 1000),
-    params.type,
-    JSON.stringify(params.indicatorParams),
-    params.persist ? 1 : 0,
-    params.maxResponsePoints ?? "",
-  ].join(":");
-}
-
-export async function computeForInstrument(params: {
-  uid: string;
-  interval: number;
-  from: Date;
-  to: Date;
-  type: number;
-  indicatorParams: Record<string, number>;
-  persist: boolean;
-  maxResponsePoints?: number;
-}): Promise<ComputeResult> {
-  const key = computeKey(params);
-  const pending = computeInflight.get(key);
-  if (pending) return pending;
-  const run = computeForInstrumentRpc(params).finally(() => {
-    if (computeInflight.get(key) === run) computeInflight.delete(key);
-  });
-  computeInflight.set(key, run);
-  return run;
-}
-
-async function computeForInstrumentRpc(params: {
-  uid: string;
-  interval: number;
-  from: Date;
-  to: Date;
-  type: number;
-  indicatorParams: Record<string, number>;
-  persist: boolean;
-  maxResponsePoints?: number;
-}): Promise<ComputeResult> {
-  const req = newComputeForInstrumentRequest();
-  req.setUid(params.uid);
-  req.setInterval(params.interval);
-  const fromTs = parseTimestamp(params.from);
-  const toTs = parseTimestamp(params.to);
-  if (fromTs) req.setFrom(fromTs);
-  if (toTs) req.setTo(toTs);
-  req.setType(params.type);
-  req.setPersist(params.persist);
-  if (
-    params.maxResponsePoints !== undefined &&
-    typeof req.setMaxResponsePoints === "function"
-  ) {
-    req.setMaxResponsePoints(params.maxResponsePoints);
-  }
-  const map = req.getParamsMap();
-  for (const [key, value] of Object.entries(params.indicatorParams)) {
-    if (Number.isFinite(value)) map.set(key, value);
-  }
-  try {
-    const resp = await indicatorsClient.computeForInstrument(req);
-    return {
-      type: resp.getType(),
-      params: mapToRecord(resp.getParamsMap()),
-      totalPoints: typeof resp.getTotalPoints === "function" ? resp.getTotalPoints() : resp.getPointsList().length,
-      points: resp.getPointsList().map((point) => {
-        const ts = point.getTime();
-        const sec = ts?.getSeconds?.() ?? 0;
-        return {
-          timeSec: sec,
-          time: formatPointTime(ts),
-          values: mapToRecord(point.getValuesMap()),
-        };
-      }),
-    };
-  } catch (err) {
-    throw wrapRpcError(err);
-  }
-}
-
-export async function listIndicatorValues(params: {
-  uid: string;
-  interval: number;
-  from: Date;
-  to: Date;
-  type: number;
-  indicatorParams: Record<string, number>;
-  limit?: number;
-  after?: Date;
-}): Promise<ListIndicatorValuesResult> {
-  const req = newListIndicatorValuesRequest();
-  req.setUid(params.uid);
-  req.setInterval(params.interval);
-  const fromTs = parseTimestamp(params.from);
-  const toTs = parseTimestamp(params.to);
-  if (fromTs) req.setFrom(fromTs);
-  if (toTs) req.setTo(toTs);
-  req.setType(params.type);
-  if (params.limit) req.setLimit(params.limit);
-  if (params.after) {
-    const afterTs = parseTimestamp(params.after);
-    if (afterTs) req.setAfter(afterTs);
-  }
-  const map = req.getParamsMap();
-  for (const [key, value] of Object.entries(params.indicatorParams)) {
-    if (Number.isFinite(value)) map.set(key, value);
-  }
-  try {
-    const resp = await invokeListIndicatorValues(req);
-    return {
-      type: resp.getType(),
-      params: mapToRecord(resp.getParamsMap()),
-      hasMore: resp.getHasMore(),
-      points: resp.getPointsList().map((point) => {
-        const ts = point.getTime();
-        const sec = ts?.getSeconds?.() ?? 0;
-        return {
-          timeSec: sec,
-          time: formatPointTime(ts),
-          values: mapToRecord(point.getValuesMap()),
-        };
-      }),
-    };
-  } catch (err) {
-    throw wrapRpcError(err);
-  }
-}
-
+/**
+ * Индикаторы, которые умеет считать пайплайн (indicators-manage + calculation
+ * воркер). Список статический: RPC `ListSupported` относился к старому
+ * синхронному сервису `Indicators`, которого больше нет в proto — расчёт
+ * теперь асинхронный, через TA-Lib воркер и ClickHouse (см. computeIndicatorForDisplay).
+ */
 export const FALLBACK_INDICATORS: IndicatorInfo[] = [
   { type: 1, name: "RSI", minBars: 14, defaultParams: { period: 14 } },
   { type: 2, name: "SMA", minBars: 20, defaultParams: { period: 20 } },
@@ -245,3 +58,89 @@ export const FALLBACK_INDICATORS: IndicatorInfo[] = [
     defaultParams: { period: 20, nbdevup: 2, nbdevdn: 2 },
   },
 ];
+
+export async function listSupportedIndicators(): Promise<IndicatorInfo[]> {
+  return FALLBACK_INDICATORS;
+}
+
+/** Порядок значений в `metrics` (см. TrB_indicators.indicator_values) для поддерживаемых типов. */
+export const INDICATOR_METRIC_KEYS: Record<number, string[]> = {
+  1: ["value"], // RSI
+  2: ["value"], // SMA
+  3: ["value"], // EMA
+  4: ["value", "signal", "hist"], // MACD (первое поле — macd-линия, имя "value" для indicatorChart.ts)
+  5: ["upper", "middle", "lower"], // Bollinger Bands
+};
+
+function applyIndicatorSettings(type: number, params: Record<string, number>) {
+  const settings = newIndicatorSettingsMessage();
+  switch (type) {
+    case 1: {
+      const p = newRsiParams();
+      p.setPeriod(params.period ?? 14);
+      settings.setRsi(p);
+      return settings;
+    }
+    case 2: {
+      const p = newSmaParams();
+      p.setPeriod(params.period ?? 20);
+      settings.setSma(p);
+      return settings;
+    }
+    case 3: {
+      const p = newEmaParams();
+      p.setPeriod(params.period ?? 20);
+      settings.setEma(p);
+      return settings;
+    }
+    case 4: {
+      const p = newMacdParams();
+      p.setFastPeriod(params.fastperiod ?? 12);
+      p.setSlowPeriod(params.slowperiod ?? 26);
+      p.setSignalPeriod(params.signalperiod ?? 9);
+      settings.setMacd(p);
+      return settings;
+    }
+    case 5: {
+      const p = newBbandsParams();
+      p.setPeriod(params.period ?? 20);
+      p.setNbDevUp(params.nbdevup ?? 2);
+      p.setNbDevDn(params.nbdevdn ?? 2);
+      settings.setBbands(p);
+      return settings;
+    }
+    default:
+      throw new Error(`Индикатор типа ${type} не поддерживается`);
+  }
+}
+
+/**
+ * Регистрирует расчёт индикатора в indicators-manage: пишет assignment
+ * (TrB_indicators.indicator_assignments) и ставит задачу расчёта в NATS.
+ * Возвращает param_hash — по нему считанные значения появятся в
+ * TrB_indicators.indicator_values (см. computeIndicatorForDisplay).
+ */
+export async function updateIndicatorSettings(params: {
+  uid: string;
+  interval: number;
+  type: number;
+  indicatorParams: Record<string, number>;
+  from: Date;
+  to: Date;
+}): Promise<number> {
+  const settings = applyIndicatorSettings(params.type, params.indicatorParams);
+  const msg = newSettingsMessage();
+  msg.setUid(params.uid);
+  msg.setInterval(params.interval);
+  msg.setSettings(settings);
+  const fromTs = parseTimestamp(params.from);
+  const toTs = parseTimestamp(params.to);
+  if (fromTs) msg.setStart(fromTs);
+  if (toTs) msg.setEnd(toTs);
+  try {
+    const resp = await indicatorSettingsClient.updateSettings(msg);
+    return resp.getHash();
+  } catch (err) {
+    throw wrapRpcError(err);
+  }
+}

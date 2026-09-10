@@ -1,17 +1,13 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  CandlestickSeries,
-  ColorType,
   CrosshairMode,
   HistogramSeries,
   LineSeries,
   LineStyle,
-  createChart,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
   type ISeriesApi,
-  type LogicalRange,
   type MouseEventParams,
   type Time,
   type UTCTimestamp,
@@ -35,16 +31,18 @@ import {
   type IndicatorTimeRange,
 } from "./indicatorLoad";
 import { CandleViewportStore } from "./viewportStore";
+import {
+  createCandleChart,
+  createCandleSeriesPair,
+  initialVisibleCount,
+  wireCandleViewport,
+} from "./candleChartCore";
 import { coverageStatus } from "./coverageOverlay";
 import "../SchedulerPanel/SchedulerPanel.css";
 import "./CandlesPanel.css";
 
 const LS_KEY = "trb.candles.panel.v2";
 const LS_INDICATORS_KEY = "trb.candles.indicators.v1";
-const UP = "#3dba7a";
-const DOWN = "#e07070";
-const VOL_UP = "rgba(61, 186, 122, 0.4)";
-const VOL_DOWN = "rgba(224, 112, 112, 0.4)";
 
 type SavedState = {
   instrument?: PickedInstrument | null;
@@ -101,24 +99,6 @@ function saveIndicatorsState(indicators: IndicatorConfig[]) {
   } catch {
     /* ignore */
   }
-}
-
-function toCandle(bar: CandleBar): CandlestickData<UTCTimestamp> {
-  return {
-    time: bar.time,
-    open: bar.open,
-    high: bar.high,
-    low: bar.low,
-    close: bar.close,
-  };
-}
-
-function toVolume(bar: CandleBar): HistogramData<UTCTimestamp> {
-  return {
-    time: bar.time,
-    value: bar.volume,
-    color: bar.close >= bar.open ? VOL_UP : VOL_DOWN,
-  };
 }
 
 function formatPrice(value: number): string {
@@ -519,81 +499,31 @@ export default function CandlesPanel() {
     const el = wrapRef.current;
     if (!el) return;
 
-    const chart = createChart(el, {
-      autoSize: true,
-      layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#efe8f8",
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-        attributionLogo: false,
-      },
-      grid: {
-        vertLines: { color: "rgba(200, 180, 230, 0.08)" },
-        horzLines: { color: "rgba(200, 180, 230, 0.08)" },
-      },
+    const chart = createCandleChart(el, {
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: {
-        borderColor: "rgba(200, 180, 230, 0.18)",
-      },
-      timeScale: {
-        borderColor: "rgba(200, 180, 230, 0.18)",
-        timeVisible: true,
-        secondsVisible: false,
-      },
       localization: {
         locale: "ru-RU",
         timeFormatter: formatChartTime,
       },
     });
 
-    const candles = chart.addSeries(CandlestickSeries, {
-      upColor: UP,
-      downColor: DOWN,
-      borderUpColor: UP,
-      borderDownColor: DOWN,
-      wickUpColor: UP,
-      wickDownColor: DOWN,
-    });
-    const volume = chart.addSeries(HistogramSeries, {
-      priceFormat: { type: "volume" },
-      priceScaleId: "volume",
-    });
-    candles.priceScale().applyOptions({
-      scaleMargins: { top: 0.08, bottom: 0.22 },
-    });
-    chart.priceScale("volume").applyOptions({
-      scaleMargins: { top: 0.82, bottom: 0 },
-      borderVisible: false,
-    });
+    const { candles, volume } = createCandleSeriesPair(chart);
 
     const paintCoverage = () => {
       setCoverInfo(coverageStatus(timesRef.current, intervalRef.current));
     };
 
-    const store = new CandleViewportStore({
-      onHistory: (bars, meta) => {
+    const { store, dispose: disposeViewport } = wireCandleViewport({
+      chart,
+      candles,
+      volume,
+      onBars: (bars, meta) => {
         latestBarsRef.current = bars;
-        const logical = chart.timeScale().getVisibleLogicalRange();
-        candles.setData(bars.map(toCandle));
-        volume.setData(bars.map(toVolume));
         timesRef.current = bars.map((bar) => bar.time as number);
         const last = bars[bars.length - 1];
         if (last) {
           candles.applyOptions({ priceFormat: priceFormat(last.close) });
           if (!hoverRef.current) setHud(last);
-        }
-        if (meta.firstLoad) {
-          const n = bars.length;
-          const visible = Math.min(n, Math.max(20, meta.visibleCount));
-          chart.timeScale().setVisibleLogicalRange({
-            from: Math.max(-0.5, n - visible - 0.5),
-            to: n + 2,
-          });
-        } else if (meta.prepended > 0 && logical) {
-          chart.timeScale().setVisibleLogicalRange({
-            from: logical.from + meta.prepended,
-            to: logical.to + meta.prepended,
-          });
         }
         setError("");
         paintCoverage();
@@ -629,11 +559,6 @@ export default function CandlesPanel() {
     candleRef.current = candles;
     volumeRef.current = volume;
     storeRef.current = store;
-
-    const onRange = (range: LogicalRange | null) => {
-      store.requestVisible(range);
-    };
-    chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
 
     const onMove = (param: MouseEventParams<Time>) => {
       if (!param.time || !param.point) {
@@ -680,9 +605,8 @@ export default function CandlesPanel() {
         window.clearTimeout(historyIndSyncTimerRef.current);
         historyIndSyncTimerRef.current = null;
       }
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
       chart.unsubscribeCrosshairMove(onMove);
-      store.destroy();
+      disposeViewport();
       chart.remove();
       chartRef.current = null;
       candleRef.current = null;
@@ -730,8 +654,7 @@ export default function CandlesPanel() {
     }
 
     store.reset(instrument.uid, interval);
-    const visible = Math.max(30, Math.floor((wrap?.clientWidth || 800) / 8));
-    void store.loadInitial(visible);
+    void store.loadInitial(initialVisibleCount(wrap?.clientWidth || 800));
   }, [instrument, interval]);
 
   const handleAddIndicator = useCallback((config: IndicatorConfig) => {

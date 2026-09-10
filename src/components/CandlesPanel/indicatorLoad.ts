@@ -1,11 +1,12 @@
 import {
-  computeForInstrument,
+  INDICATOR_METRIC_KEYS,
+  updateIndicatorSettings,
   type IndicatorConfig,
   type IndicatorPoint,
 } from "../../api/indicators";
+import { fetchIndicatorValueRows, waitForIndicatorCoverage } from "../../api/indicators/values";
 import {
   intervalMeta,
-  PAGE_CANDLES,
   type CandleBar,
 } from "../../api/tinvest/candles";
 import { HISTORY_FROM_SEC } from "./viewportStore";
@@ -80,13 +81,6 @@ export function rangeToDates(range: IndicatorTimeRange): { from: Date; to: Date 
   };
 }
 
-function maxResponsePointsForRange(from: Date, to: Date, interval: number): number {
-  const step = Math.max(intervalMeta(interval).seconds, 1);
-  const spanSec = Math.max(0, Math.floor(to.getTime() / 1000) - Math.floor(from.getTime() / 1000));
-  const n = Math.ceil(spanSec / step) + 64;
-  return Math.min(50_000, Math.max(PAGE_CANDLES, n));
-}
-
 /** Сколько баров TA-Lib съедает на прогреве (NaN в начале ряда). */
 export function indicatorWarmupBars(ind: IndicatorConfig): number {
   const period = Number(ind.params.period);
@@ -120,8 +114,33 @@ export function padRangeForIndicator(
 }
 
 /**
- * Один RPC: сервер отдаёт значения, если они уже есть, иначе досчитывает
- * недостающее и только потом отвечает.
+ * Дедупликация одинаковых одновременных запросов: прогрузка истории может
+ * дёргать resync индикатора чаще, чем успевает ответить пайплайн — без этого
+ * на один и тот же диапазон уходит несколько параллельных UpdateSettings+poll.
+ */
+const computeInflight = new Map<string, Promise<IndicatorPoint[]>>();
+
+function computeCacheKey(params: {
+  uid: string;
+  interval: number;
+  ind: IndicatorConfig;
+  from: Date;
+  to: Date;
+}): string {
+  return [
+    params.uid,
+    params.interval,
+    params.ind.type,
+    JSON.stringify(params.ind.params),
+    Math.floor(params.from.getTime() / 1000),
+    Math.floor(params.to.getTime() / 1000),
+  ].join(":");
+}
+
+/**
+ * Асинхронный пайплайн (indicators-manage → NATS → TA-Lib воркер → ClickHouse):
+ * ставим/обновляем задание расчёта, ждём, пока значения дойдут почти до конца
+ * окна, затем читаем готовый ряд из TrB_indicators.indicator_values.
  */
 export async function computeIndicatorForDisplay(params: {
   uid: string;
@@ -132,21 +151,58 @@ export async function computeIndicatorForDisplay(params: {
   /** Прогрев только на первый запрос: у стыка с уже загруженным рядом lookback делает бэкенд. */
   padWarmup?: boolean;
 }): Promise<IndicatorPoint[]> {
+  const key = computeCacheKey(params);
+  const pending = computeInflight.get(key);
+  if (pending) return pending;
+  const run = computeIndicatorForDisplayRpc(params).finally(() => {
+    if (computeInflight.get(key) === run) computeInflight.delete(key);
+  });
+  computeInflight.set(key, run);
+  return run;
+}
+
+async function computeIndicatorForDisplayRpc(params: {
+  uid: string;
+  interval: number;
+  ind: IndicatorConfig;
+  from: Date;
+  to: Date;
+  padWarmup?: boolean;
+}): Promise<IndicatorPoint[]> {
   const needPad = params.padWarmup !== false && !params.ind.persist;
   const range = needPad
     ? padRangeForIndicator({ from: params.from, to: params.to }, params.interval, params.ind)
     : { from: params.from, to: params.to };
-  const res = await computeForInstrument({
+
+  const paramHash = await updateIndicatorSettings({
     uid: params.uid,
     interval: params.interval,
-    from: range.from,
-    to: range.to,
     type: params.ind.type,
     indicatorParams: params.ind.params,
-    persist: params.ind.persist,
-    maxResponsePoints: maxResponsePointsForRange(range.from, range.to, params.interval),
+    from: range.from,
+    to: range.to,
   });
-  return res.points;
+
+  const fromSec = Math.floor(range.from.getTime() / 1000);
+  const toSec = Math.floor(range.to.getTime() / 1000);
+  // Таймаут покрытия — не ошибка: узкое окно (короче прогрева индикатора)
+  // законно не даёт ни одной точки. В любом случае читаем то, что уже есть.
+  await waitForIndicatorCoverage(paramHash, toSec);
+  const rows = await fetchIndicatorValueRows(paramHash, fromSec, toSec);
+
+  const keys = INDICATOR_METRIC_KEYS[params.ind.type] ?? ["value"];
+  const points: IndicatorPoint[] = [];
+  for (const row of rows) {
+    const values: Record<string, number> = {};
+    keys.forEach((key, idx) => {
+      const v = row.metrics[idx];
+      if (Number.isFinite(v)) values[key] = v;
+    });
+    if (Object.keys(values).length > 0) {
+      points.push({ timeSec: row.timeSec, time: "", values });
+    }
+  }
+  return points;
 }
 
 export function applyIndicatorToSeries(

@@ -547,6 +547,7 @@
 }
 
 .strategy-chart-wrap {
+  position: relative;
   height: 20rem;
   border: 1px solid var(--line);
   border-radius: 0.6rem;
@@ -556,6 +557,15 @@
 .strategy-equity-chart {
   width: 100%;
   height: 100%;
+}
+
+.strategy-price-status-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  background: rgba(14, 12, 24, 0.35);
+  pointer-events: none;
 }
 
 .strategy-trades h3 {
