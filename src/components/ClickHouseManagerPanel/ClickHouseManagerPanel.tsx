@@ -52,6 +52,12 @@ import "../SchedulerPanel/SchedulerPanel.css";
 import { DbConnectionSelect } from "../DbConnectionSelect";
 import "./ClickHouseManagerPanel.css";
 import CreateTableModal from "./ClickHouseCreateTableModal";
+import {
+  AddColumnForm,
+  CreateDbForm,
+  ModifyColumnForm,
+  RenameForm,
+} from "./ClickHouseDialogs";
 import { ModalBackdrop } from "../common/ModalBackdrop";
 import { useNotify } from "../../notifications";
 
@@ -356,24 +362,10 @@ export default function ClickHouseManagerPanel() {
   const [sqlResult, setSqlResult] = useState<ChQueryResult | null>(null);
   const [sqlError, setSqlError] = useState("");
 
-  // Form states for modals
-  const [dbName, setDbName] = useState("");
-  const [dbEngine, setDbEngine] = useState("Atomic");
-  const [dbComment, setDbComment] = useState("");
-
+  // Каталоги для формы создания таблицы (сами формы — на react-hook-form).
   const [tableOptions, setTableOptions] = useState<ChTableOptions | null>(null);
   const [tableOptionsLoading, setTableOptionsLoading] = useState(false);
   const [tableOptionsError, setTableOptionsError] = useState("");
-
-  const [newName, setNewName] = useState("");
-  const [colName, setColName] = useState("");
-  const [colType, setColType] = useState("String");
-  const [colCodec, setColCodec] = useState("");
-  const [colDefaultKind, setColDefaultKind] = useState("");
-  const [colDefaultExpr, setColDefaultExpr] = useState("");
-  const [colTtl, setColTtl] = useState("");
-  const [colComment, setColComment] = useState("");
-  const [colAfter, setColAfter] = useState("");
 
   const sqlEditorRef = useRef<HTMLTextAreaElement>(null);
   const previewSeq = useRef(0);
@@ -835,12 +827,7 @@ export default function ClickHouseManagerPanel() {
                 <button
                   type="button"
                   className="primary-btn sm"
-                  onClick={() => {
-                    setDbName("");
-                    setDbEngine("Atomic");
-                    setDbComment("");
-                    setDialog({ kind: "create-db" });
-                  }}
+                  onClick={() => setDialog({ kind: "create-db" })}
                   title="Создать новую базу данных"
                 >
                   + База
@@ -1045,10 +1032,7 @@ export default function ClickHouseManagerPanel() {
                             <button
                               type="button"
                               className="secondary-btn sm"
-                              onClick={() => {
-                                setNewName(selectedTable.name);
-                                setDialog({ kind: "rename-table" });
-                              }}
+                              onClick={() => setDialog({ kind: "rename-table" })}
                               title="Переименовать таблицу"
                             >
                               ✏️ Rename
@@ -1189,17 +1173,7 @@ export default function ClickHouseManagerPanel() {
                             <button
                               type="button"
                               className="primary-btn sm"
-                              onClick={() => {
-                                setColName("");
-                                setColType("String");
-                                setColCodec("");
-                                setColDefaultKind("");
-                                setColDefaultExpr("");
-                                setColTtl("");
-                                setColComment("");
-                                setColAfter("");
-                                setDialog({ kind: "add-column" });
-                              }}
+                              onClick={() => setDialog({ kind: "add-column" })}
                             >
                               + Добавить колонку
                             </button>
@@ -1248,15 +1222,7 @@ export default function ClickHouseManagerPanel() {
                                         <button
                                           type="button"
                                           className="secondary-btn sm"
-                                          onClick={() => {
-                                            setColName(col.name);
-                                            setColType(col.type);
-                                            setColCodec(col.codec);
-                                            setColDefaultExpr(col.default_expression);
-                                            setColTtl(col.ttl);
-                                            setColComment(col.comment);
-                                            setDialog({ kind: "modify-column", column: col });
-                                          }}
+                                          onClick={() => setDialog({ kind: "modify-column", column: col })}
                                           title="Изменить тип или параметры колонки"
                                         >
                                           ✏️
@@ -1264,10 +1230,7 @@ export default function ClickHouseManagerPanel() {
                                         <button
                                           type="button"
                                           className="secondary-btn sm"
-                                          onClick={() => {
-                                            setNewName(col.name);
-                                            setDialog({ kind: "rename-column", column: col });
-                                          }}
+                                          onClick={() => setDialog({ kind: "rename-column", column: col })}
                                           title="Переименовать колонку"
                                         >
                                           🏷
@@ -1908,71 +1871,22 @@ export default function ClickHouseManagerPanel() {
 
       {/* 1. Create Database Modal */}
       {dialog?.kind === "create-db" && (
-        <ModalBackdrop onClose={() => setDialog(null)}>
-          <div className="ch-modal-window" onClick={(e) => e.stopPropagation()}>
-            <div className="ch-modal-head">
-              <h3>Создание базы данных</h3>
-              <button type="button" className="ch-modal-close" onClick={() => setDialog(null)}>
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await createDatabase({
-                    name: dbName,
-                    engine: dbEngine,
-                    comment: dbComment,
-                    if_not_exists: true,
-                  });
-                  setDialog(null);
-                  await loadDatabases(true);
-                }, `База данных "${dbName}" успешно создана`);
-              }}
-            >
-              <div className="ch-modal-body">
-                <div className="field">
-                  <label>Имя базы данных *</label>
-                  <input
-                    type="text"
-                    required
-                    pattern="^[A-Za-z_][A-Za-z0-9_]*$"
-                    placeholder="my_database"
-                    value={dbName}
-                    onChange={(e) => setDbName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <div className="field">
-                  <label>Движок базы (Engine)</label>
-                  <select value={dbEngine} onChange={(e) => setDbEngine(e.target.value)}>
-                    <option value="Atomic">Atomic (по умолчанию)</option>
-                    <option value="Lazy">Lazy</option>
-                    <option value="Memory">Memory</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label>Комментарий (опционально)</label>
-                  <input
-                    type="text"
-                    placeholder="Описание назначения базы"
-                    value={dbComment}
-                    onChange={(e) => setDbComment(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="ch-modal-foot">
-                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary-btn" disabled={busy || !dbName.trim()}>
-                  {busy ? "Создание..." : "Создать базу"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalBackdrop>
+        <CreateDbForm
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSubmit={(v) =>
+            run(async () => {
+              await createDatabase({
+                name: v.name,
+                engine: v.engine,
+                comment: v.comment,
+                if_not_exists: true,
+              });
+              setDialog(null);
+              await loadDatabases(true);
+            }, `База данных "${v.name}" успешно создана`)
+          }
+        />
       )}
 
       {/* 2. Create Table Modal */}
@@ -2000,262 +1914,93 @@ export default function ClickHouseManagerPanel() {
 
       {/* 3. Add Column Modal */}
       {dialog?.kind === "add-column" && selectedTable && (
-        <ModalBackdrop onClose={() => setDialog(null)}>
-          <div className="ch-modal-window" onClick={(e) => e.stopPropagation()}>
-            <div className="ch-modal-head">
-              <h3>Добавить колонку в {selectedTable.name}</h3>
-              <button type="button" className="ch-modal-close" onClick={() => setDialog(null)}>
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await addColumn(
-                    selectedDb,
-                    selectedTable.name,
-                    {
-                      name: colName,
-                      type: colType,
-                      codec: colCodec.trim() || undefined,
-                      default_kind: colDefaultKind.trim() || undefined,
-                      default_expression: colDefaultExpr.trim() || undefined,
-                      ttl: colTtl.trim() || undefined,
-                      comment: colComment.trim() || undefined,
-                    },
-                    {
-                      after: colAfter.trim() || undefined,
-                      if_not_exists: true,
-                    },
-                  );
-                  setDialog(null);
-                  await loadTableDetail(selectedDb, selectedTable.name);
-                }, `Колонка "${colName}" добавлена`);
-              }}
-            >
-              <div className="ch-modal-body">
-                <div className="field">
-                  <label>Имя колонки *</label>
-                  <input
-                    type="text"
-                    required
-                    pattern="^[A-Za-z_][A-Za-z0-9_]*$"
-                    placeholder="volume"
-                    value={colName}
-                    onChange={(e) => setColName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <div className="field">
-                  <label>Тип данных *</label>
-                  <input
-                    type="text"
-                    list="types-list"
-                    required
-                    placeholder="Float64"
-                    value={colType}
-                    onChange={(e) => setColType(e.target.value)}
-                  />
-                </div>
-                <div className="field">
-                  <label>Кодек сжатия</label>
-                  <select value={colCodec} onChange={(e) => setColCodec(e.target.value)}>
-                    <option value="">По умолчанию</option>
-                    {(tableOptions?.codecs ?? []).map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label>Разместить после колонки (опционально)</label>
-                  <select value={colAfter} onChange={(e) => setColAfter(e.target.value)}>
-                    <option value="">В конец таблицы</option>
-                    <option value="FIRST">В самое начало (FIRST)</option>
-                    {selectedTable.columns?.map((c) => (
-                      <option key={c.name} value={c.name}>
-                        После {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="ch-modal-foot">
-                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary-btn" disabled={busy || !colName.trim()}>
-                  {busy ? "Добавление..." : "Добавить колонку"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalBackdrop>
+        <AddColumnForm
+          busy={busy}
+          onClose={() => setDialog(null)}
+          tableName={selectedTable.name}
+          codecs={tableOptions?.codecs ?? []}
+          columns={selectedTable.columns ?? []}
+          onSubmit={(v) =>
+            run(async () => {
+              await addColumn(
+                selectedDb,
+                selectedTable.name,
+                {
+                  name: v.name,
+                  type: v.type,
+                  codec: v.codec.trim() || undefined,
+                },
+                {
+                  after: v.after.trim() || undefined,
+                  if_not_exists: true,
+                },
+              );
+              setDialog(null);
+              await loadTableDetail(selectedDb, selectedTable.name);
+            }, `Колонка "${v.name}" добавлена`)
+          }
+        />
       )}
 
       {/* 4. Modify Column Modal */}
       {dialog?.kind === "modify-column" && selectedTable && (
-        <ModalBackdrop onClose={() => setDialog(null)}>
-          <div className="ch-modal-window" onClick={(e) => e.stopPropagation()}>
-            <div className="ch-modal-head">
-              <h3>Изменить колонку {dialog.column.name}</h3>
-              <button type="button" className="ch-modal-close" onClick={() => setDialog(null)}>
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await modifyColumn(selectedDb, selectedTable.name, {
-                    name: dialog.column.name,
-                    type: colType,
-                    codec: colCodec.trim() || undefined,
-                    default_expression: colDefaultExpr.trim() || undefined,
-                    ttl: colTtl.trim() || undefined,
-                    comment: colComment.trim() || undefined,
-                  });
-                  setDialog(null);
-                  await loadTableDetail(selectedDb, selectedTable.name);
-                }, `Колонка "${dialog.column.name}" изменена`);
-              }}
-            >
-              <div className="ch-modal-body">
-                <div className="field">
-                  <label>Новый тип данных *</label>
-                  <input
-                    type="text"
-                    list="types-list"
-                    required
-                    value={colType}
-                    onChange={(e) => setColType(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <div className="field">
-                  <label>Кодек сжатия</label>
-                  <input
-                    type="text"
-                    placeholder="ZSTD(1) или DoubleDelta, LZ4"
-                    value={colCodec}
-                    onChange={(e) => setColCodec(e.target.value)}
-                  />
-                </div>
-                <div className="field">
-                  <label>TTL выражение</label>
-                  <input
-                    type="text"
-                    placeholder="timestamp + INTERVAL 30 DAY"
-                    value={colTtl}
-                    onChange={(e) => setColTtl(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="ch-modal-foot">
-                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary-btn" disabled={busy || !colType.trim()}>
-                  {busy ? "Сохранение..." : "Сохранить изменения"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalBackdrop>
+        <ModifyColumnForm
+          busy={busy}
+          onClose={() => setDialog(null)}
+          column={dialog.column}
+          onSubmit={(v) => {
+            const col = dialog.column;
+            run(async () => {
+              await modifyColumn(selectedDb, selectedTable.name, {
+                name: col.name,
+                type: v.type,
+                codec: v.codec.trim() || undefined,
+                default_expression: col.default_expression || undefined,
+                ttl: v.ttl.trim() || undefined,
+                comment: col.comment || undefined,
+              });
+              setDialog(null);
+              await loadTableDetail(selectedDb, selectedTable.name);
+            }, `Колонка "${col.name}" изменена`);
+          }}
+        />
       )}
 
       {/* 5. Rename Table Modal */}
       {dialog?.kind === "rename-table" && selectedTable && (
-        <ModalBackdrop onClose={() => setDialog(null)}>
-          <div className="ch-modal-window" onClick={(e) => e.stopPropagation()}>
-            <div className="ch-modal-head">
-              <h3>Переименовать таблицу {selectedTable.name}</h3>
-              <button type="button" className="ch-modal-close" onClick={() => setDialog(null)}>
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await renameTable(selectedDb, selectedTable.name, newName);
-                  setDialog(null);
-                  await loadTables(selectedDb, true);
-                }, `Таблица переименована в "${newName}"`);
-              }}
-            >
-              <div className="ch-modal-body">
-                <div className="field">
-                  <label>Новое имя таблицы *</label>
-                  <input
-                    type="text"
-                    required
-                    pattern="^[A-Za-z_][A-Za-z0-9_]*$"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-              </div>
-              <div className="ch-modal-foot">
-                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary-btn" disabled={busy || !newName.trim()}>
-                  {busy ? "Переименование..." : "Переименовать"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalBackdrop>
+        <RenameForm
+          busy={busy}
+          onClose={() => setDialog(null)}
+          title={`Переименовать таблицу ${selectedTable.name}`}
+          label="Новое имя таблицы"
+          currentName={selectedTable.name}
+          onSubmit={(name) =>
+            run(async () => {
+              await renameTable(selectedDb, selectedTable.name, name);
+              setDialog(null);
+              await loadTables(selectedDb, true);
+            }, `Таблица переименована в "${name}"`)
+          }
+        />
       )}
 
       {/* 6. Rename Column Modal */}
       {dialog?.kind === "rename-column" && selectedTable && (
-        <ModalBackdrop onClose={() => setDialog(null)}>
-          <div className="ch-modal-window" onClick={(e) => e.stopPropagation()}>
-            <div className="ch-modal-head">
-              <h3>Переименовать колонку {dialog.column.name}</h3>
-              <button type="button" className="ch-modal-close" onClick={() => setDialog(null)}>
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await renameColumn(selectedDb, selectedTable.name, dialog.column.name, newName);
-                  setDialog(null);
-                  await loadTableDetail(selectedDb, selectedTable.name);
-                }, `Колонка переименована в "${newName}"`);
-              }}
-            >
-              <div className="ch-modal-body">
-                <div className="field">
-                  <label>Новое имя колонки *</label>
-                  <input
-                    type="text"
-                    required
-                    pattern="^[A-Za-z_][A-Za-z0-9_]*$"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-              </div>
-              <div className="ch-modal-foot">
-                <button type="button" className="secondary-btn" onClick={() => setDialog(null)}>
-                  Отмена
-                </button>
-                <button type="submit" className="primary-btn" disabled={busy || !newName.trim()}>
-                  {busy ? "Переименование..." : "Переименовать"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </ModalBackdrop>
+        <RenameForm
+          busy={busy}
+          onClose={() => setDialog(null)}
+          title={`Переименовать колонку ${dialog.column.name}`}
+          label="Новое имя колонки"
+          currentName={dialog.column.name}
+          onSubmit={(name) => {
+            const col = dialog.column;
+            run(async () => {
+              await renameColumn(selectedDb, selectedTable.name, col.name, name);
+              setDialog(null);
+              await loadTableDetail(selectedDb, selectedTable.name);
+            }, `Колонка переименована в "${name}"`);
+          }}
+        />
       )}
 
       {/* 7. Confirm Danger Dialog */}
