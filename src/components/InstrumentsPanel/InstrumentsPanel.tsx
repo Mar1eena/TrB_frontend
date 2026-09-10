@@ -14,6 +14,7 @@ import { formatDate, formatDateTimeMs } from "../../api/scheduler";
 import { useThrottledColumnLayout } from "../../hooks/useThrottledColumnLayout";
 import { useIncrementalList } from "../../hooks/useIncrementalList";
 import { SkeletonRow } from "../common/TableParts";
+import { ModalBackdrop } from "../common/ModalBackdrop";
 import { useNotify } from "../../notifications";
 import "../../styles/tables.css";
 import "../SchedulerPanel/SchedulerPanel.css";
@@ -346,7 +347,6 @@ function diffInstrumentFields(left: Instrument, right: Instrument): FieldDiff[] 
 
 function InstrumentDetails({ item, onClose }: { item: Instrument; onClose: () => void }) {
   const notify = useNotify();
-  const backdropPressed = useRef(false);
   const [versions, setVersions] = useState<Instrument[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(true);
   const [selectedVersion, setSelectedVersion] = useState<Instrument | null>(null);
@@ -440,16 +440,7 @@ function InstrumentDetails({ item, onClose }: { item: Instrument; onClose: () =>
   };
 
   return (
-    <div
-      className="instrument-modal-backdrop"
-      onMouseDown={(e) => {
-        backdropPressed.current = e.target === e.currentTarget;
-      }}
-      onMouseUp={(e) => {
-        if (backdropPressed.current && e.target === e.currentTarget) onClose();
-        backdropPressed.current = false;
-      }}
-    >
+    <ModalBackdrop onClose={onClose} className="instrument-modal-backdrop" title="Инструмент">
       <div
         className={`instrument-modal instrument-modal-wide${comparePair ? " instrument-modal-compare" : ""}`}
         role="dialog"
@@ -621,7 +612,7 @@ function InstrumentDetails({ item, onClose }: { item: Instrument; onClose: () =>
           )}
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
 
@@ -633,7 +624,6 @@ export default function InstrumentsPanel() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [filters, setFilters] = useState<Record<SortKey, string>>(EMPTY_FILTERS);
   const [selected, setSelected] = useState<Instrument | null>(null);
-  const confirmBackdropPressed = useRef(false);
   const deferredFilters = useDeferredValue(filters);
 
   const fieldFilters = useMemo(() => {
@@ -850,17 +840,10 @@ export default function InstrumentsPanel() {
       {selected ? <InstrumentDetails item={selected} onClose={() => setSelected(null)} /> : null}
 
       {confirmRefresh ? (
-        <div
+        <ModalBackdrop
+          onClose={() => setConfirmRefresh(false)}
           className="instrument-modal-backdrop"
-          onMouseDown={(e) => {
-            confirmBackdropPressed.current = e.target === e.currentTarget;
-          }}
-          onMouseUp={(e) => {
-            if (confirmBackdropPressed.current && e.target === e.currentTarget) {
-              setConfirmRefresh(false);
-            }
-            confirmBackdropPressed.current = false;
-          }}
+          title="Обновить из Тинькофф?"
         >
           <div
             className="instrument-modal instrument-confirm-modal"
@@ -897,7 +880,7 @@ export default function InstrumentsPanel() {
               </button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       ) : null}
     </section>
   );

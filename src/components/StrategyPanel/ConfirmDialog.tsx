@@ -2,17 +2,7 @@
 // Внешний вид повторяет модалки панели стратегий (.strategy-modal).
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useOverlayClose } from "../../hooks/useOverlayClose";
-
-function useEscape(onCancel: () => void) {
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [onCancel]);
-}
+import { ModalBackdrop } from "../common/ModalBackdrop";
 
 export function ConfirmDialog({
   title,
@@ -31,15 +21,9 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  useEscape(onCancel);
-  const overlay = useOverlayClose(onCancel);
   return (
-    <div className="strategy-modal-overlay" {...overlay}>
-      <div
-        className="strategy-modal strategy-confirm"
-        role="alertdialog"
-        aria-modal="true"
-      >
+    <ModalBackdrop onClose={onCancel} className="strategy-modal-overlay" title={title}>
+      <div className="strategy-modal strategy-confirm" role="alertdialog" aria-modal="true">
         <header className="strategy-modal-head">
           <h2>{title}</h2>
           <button type="button" className="strategy-modal-close" onClick={onCancel}>
@@ -61,7 +45,7 @@ export function ConfirmDialog({
           </button>
         </footer>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
 
@@ -88,8 +72,6 @@ export function PromptDialog({
 }) {
   const [value, setValue] = useState(defaultValue);
   const ref = useRef<HTMLInputElement>(null);
-  useEscape(onCancel);
-  const overlay = useOverlayClose(onCancel);
   useEffect(() => {
     ref.current?.focus();
     ref.current?.select();
@@ -101,12 +83,8 @@ export function PromptDialog({
   };
 
   return (
-    <div className="strategy-modal-overlay" {...overlay}>
-      <div
-        className="strategy-modal strategy-confirm"
-        role="dialog"
-        aria-modal="true"
-      >
+    <ModalBackdrop onClose={onCancel} className="strategy-modal-overlay" title={title}>
+      <div className="strategy-modal strategy-confirm" role="dialog" aria-modal="true">
         <header className="strategy-modal-head">
           <h2>{title}</h2>
           <button type="button" className="strategy-modal-close" onClick={onCancel}>
@@ -135,6 +113,6 @@ export function PromptDialog({
           </button>
         </footer>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

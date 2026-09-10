@@ -1,4 +1,5 @@
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
+import { ModalBackdrop } from "../common/ModalBackdrop";
 import { type PgColumnWrite, type PgTableOptions } from "../../api/postgresql";
 
 type ColumnRow = {
@@ -84,7 +85,6 @@ function PostgresCreateTableModal({
     emptyColumnRow(),
   ]);
   const [formError, setFormError] = useState("");
-  const backdropPressed = useRef(false);
 
   const types = useMemo(() => {
     const list = options?.data_types ?? [];
@@ -127,16 +127,7 @@ function PostgresCreateTableModal({
   }, []);
 
   return (
-    <div
-      className="pg-modal-backdrop"
-      onMouseDown={(e) => {
-        backdropPressed.current = e.target === e.currentTarget;
-      }}
-      onClick={(e) => {
-        if (backdropPressed.current && e.target === e.currentTarget) onClose();
-        backdropPressed.current = false;
-      }}
-    >
+    <ModalBackdrop onClose={onClose} className="pg-modal-backdrop" title="Создание таблицы">
       <div className="pg-modal-window is-xlarge" onClick={(e) => e.stopPropagation()}>
         <div className="pg-modal-head">
           <h3>Создание таблицы в {database}.{tableSchema}</h3>
@@ -422,7 +413,7 @@ function PostgresCreateTableModal({
           ))}
         </datalist>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
 

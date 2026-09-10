@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addColumn,
   createDatabase,
@@ -52,6 +52,7 @@ import "../SchedulerPanel/SchedulerPanel.css";
 import { DbConnectionSelect } from "../DbConnectionSelect";
 import "./ClickHouseManagerPanel.css";
 import CreateTableModal from "./ClickHouseCreateTableModal";
+import { ModalBackdrop } from "../common/ModalBackdrop";
 import { useNotify } from "../../notifications";
 
 type MainTab = "explorer" | "console" | "processes" | "system";
@@ -294,30 +295,6 @@ function exportJson(columns: string[], rows: string[][], filename: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Close only when press+release both happen on the backdrop (not drag-out from modal). */
-function ModalBackdrop({
-  onClose,
-  children,
-}: {
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const pressed = useRef(false);
-  return (
-    <div
-      className="ch-modal-backdrop"
-      onMouseDown={(e) => {
-        pressed.current = e.target === e.currentTarget;
-      }}
-      onClick={(e) => {
-        if (pressed.current && e.target === e.currentTarget) onClose();
-        pressed.current = false;
-      }}
-    >
-      {children}
-    </div>
-  );
-}
 
 export default function ClickHouseManagerPanel() {
   const notify = useNotify();

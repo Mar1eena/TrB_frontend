@@ -1,5 +1,6 @@
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { type ChColumnWrite, type ChTableOptions } from "../../api/clickhouse";
+import { ModalBackdrop } from "../common/ModalBackdrop";
 
 const DEFAULT_KIND_OPTIONS = ["", "DEFAULT", "MATERIALIZED", "ALIAS", "EPHEMERAL"];
 
@@ -72,7 +73,6 @@ function CreateTableModal({
   const [columnRows, setColumnRows] = useState<ColumnRow[]>(() => [emptyColumnRow(), emptyColumnRow()]);
   const [tableSettings, setTableSettings] = useState<{ key: string; value: string }[]>([]);
   const [formError, setFormError] = useState("");
-  const backdropPressed = useRef(false);
 
   const engines = options?.engines ?? [];
   const types = options?.data_types ?? [];
@@ -103,16 +103,7 @@ function CreateTableModal({
   }, []);
 
   return (
-    <div
-      className="ch-modal-backdrop"
-      onMouseDown={(e) => {
-        backdropPressed.current = e.target === e.currentTarget;
-      }}
-      onClick={(e) => {
-        if (backdropPressed.current && e.target === e.currentTarget) onClose();
-        backdropPressed.current = false;
-      }}
-    >
+    <ModalBackdrop onClose={onClose} className="ch-modal-backdrop" title="Создание таблицы">
       <div className="ch-modal-window is-xlarge" onClick={(e) => e.stopPropagation()}>
         <div className="ch-modal-head">
           <h3>Создание таблицы в базе {database}</h3>
@@ -456,7 +447,7 @@ function CreateTableModal({
           ))}
         </datalist>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
 

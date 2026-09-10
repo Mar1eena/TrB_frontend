@@ -65,6 +65,7 @@ import "../SchedulerPanel/SchedulerPanel.css";
 import { DbConnectionSelect } from "../DbConnectionSelect";
 import "./PostgresManagerPanel.css";
 import PostgresCreateTableModal from "./PostgresCreateTableModal";
+import { ModalBackdrop as SharedModalBackdrop } from "../common/ModalBackdrop";
 import { useNotify } from "../../notifications";
 
 type MainTab = "explorer" | "console" | "processes" | "system";
@@ -267,27 +268,11 @@ function exportJson(columns: string[], rows: string[][], filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function ModalBackdrop({
-  onClose,
-  children,
-}: {
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const pressed = useRef(false);
+function ModalBackdrop({ onClose, children }: { onClose: () => void; children: ReactNode }) {
   return (
-    <div
-      className="pg-modal-backdrop"
-      onMouseDown={(e) => {
-        pressed.current = e.target === e.currentTarget;
-      }}
-      onClick={(e) => {
-        if (pressed.current && e.target === e.currentTarget) onClose();
-        pressed.current = false;
-      }}
-    >
+    <SharedModalBackdrop onClose={onClose} className="pg-modal-backdrop">
       {children}
-    </div>
+    </SharedModalBackdrop>
   );
 }
 

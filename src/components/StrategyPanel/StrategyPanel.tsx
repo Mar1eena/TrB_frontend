@@ -20,7 +20,7 @@ import {
 } from "./SearchBuilders";
 import { ConfirmDialog, PromptDialog } from "./ConfirmDialog";
 import { normalizeSpec, pruneSpec } from "./specModel";
-import { useOverlayClose } from "../../hooks/useOverlayClose";
+import { ModalBackdrop } from "../common/ModalBackdrop";
 import "../SchedulerPanel/SchedulerPanel.css";
 import "../../styles/tables.css";
 import "./StrategyPanel.css";
@@ -518,13 +518,14 @@ function SpecEditorModal({
 
   const indicatorCount = Array.isArray(spec.indicators) ? spec.indicators.length : 0;
 
-  const overlay = useOverlayClose(() => {
-    if (!busy) onClose();
-  });
-
   return (
     <>
-    <div className="strategy-modal-overlay" {...overlay}>
+    <ModalBackdrop
+      onClose={onClose}
+      disabled={busy}
+      className="strategy-modal-overlay"
+      title={initial ? "Редактор стратегии" : "Новая стратегия"}
+    >
       <div className="strategy-modal wide strategy-editor">
         <header className="strategy-modal-head">
           <div>
@@ -643,7 +644,7 @@ function SpecEditorModal({
           </button>
         </footer>
       </div>
-    </div>
+    </ModalBackdrop>
 
       {pendingTemplate ? (
         <ConfirmDialog
@@ -1061,10 +1062,9 @@ function BacktestResultModal({
   const run = data?.run ?? statusRun;
   const metrics = data?.metrics;
   const trades = data?.trades ?? [];
-  const overlay = useOverlayClose(onClose);
 
   return (
-    <div className="strategy-modal-overlay" {...overlay}>
+    <ModalBackdrop onClose={onClose} className="strategy-modal-overlay" title="Результат бэктеста">
       <div className="strategy-modal wide">
         <header className="strategy-modal-head">
           <h2>
@@ -1163,7 +1163,7 @@ function BacktestResultModal({
           </div>
         ) : null}
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
 
@@ -1528,11 +1528,10 @@ function SearchResultModal({
 
   const p = run?.progress;
   const active = ACTIVE_STATUSES.includes(p?.status ?? "RUN_QUEUED");
-  const overlay = useOverlayClose(onClose);
 
   return (
     <>
-    <div className="strategy-modal-overlay" {...overlay}>
+    <ModalBackdrop onClose={onClose} className="strategy-modal-overlay" title="Поиск">
       <div className="strategy-modal wide">
         <header className="strategy-modal-head">
           <h2>Поиск {p ? statusChip(p.status) : null}</h2>
@@ -1604,7 +1603,7 @@ function SearchResultModal({
           )}
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
 
       {saveTarget ? (
         <PromptDialog
