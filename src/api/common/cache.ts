@@ -1,4 +1,5 @@
 import { wrapRpcError } from "./errors";
+import { queryClient } from "./queryClient";
 
 export type CacheOptions = {
   fresh?: boolean;
@@ -7,53 +8,50 @@ export type CacheOptions = {
 
 const DEFAULT_CACHE_TTL_MS = 2000;
 
+/**
+ * Тонкая надстройка над общим TanStack QueryClient для api-слоя (вне React).
+ *
+ * - `read` = `queryClient.fetchQuery` (TTL → staleTime, дедуп in-flight и кеш —
+ *   встроенные в react-query).
+ * - `write` инвалидирует кеш вокруг мутации.
+ * - Ключ строки превращается в queryKey разбиением по «:», чтобы префиксная
+ *   инвалидация (`invalidate("nats:")`) работала через частичное совпадение ключа.
+ */
 export class ApiCache {
-  private cache = new Map<string, { at: number; data: unknown }>();
-  private inflight = new Map<string, Promise<unknown>>();
   private defaultTtl: number;
+  private prefix: string;
 
-  constructor(defaultTtl = DEFAULT_CACHE_TTL_MS) {
+  constructor(defaultTtl = DEFAULT_CACHE_TTL_MS, namespace = "api") {
     this.defaultTtl = defaultTtl;
+    this.prefix = namespace;
+  }
+
+  private toKey(key: string): unknown[] {
+    return [this.prefix, ...key.split(":")];
   }
 
   async read<T>(key: string, fn: () => Promise<T>, opts?: CacheOptions): Promise<T> {
     const ttl = opts?.ttlMs ?? this.defaultTtl;
-    if (!opts?.fresh && ttl > 0) {
-      const cached = this.cache.get(key);
-      if (cached && Date.now() - cached.at < ttl) {
-        return cached.data as T;
-      }
-      const pending = this.inflight.get(key);
-      if (pending) {
-        return pending as Promise<T>;
-      }
+    const queryKey = this.toKey(key);
+    if (opts?.fresh) {
+      queryClient.removeQueries({ queryKey, exact: true });
     }
-
-    const run = (async () => {
-      try {
-        const data = await fn();
-        if (ttl > 0) {
-          this.cache.set(key, { at: Date.now(), data });
-        }
-        return data;
-      } catch (err) {
-        throw wrapRpcError(err);
-      }
-    })();
-
-    this.inflight.set(key, run);
     try {
-      return await run;
-    } finally {
-      this.inflight.delete(key);
+      return await queryClient.fetchQuery({
+        queryKey,
+        queryFn: fn,
+        staleTime: opts?.fresh ? 0 : ttl,
+        gcTime: Math.max(ttl, DEFAULT_CACHE_TTL_MS),
+      });
+    } catch (err) {
+      throw wrapRpcError(err);
     }
   }
 
   async write<T>(fn: () => Promise<T>): Promise<T> {
-    this.clear();
     try {
       const data = await fn();
-      this.clear();
+      await queryClient.invalidateQueries({ queryKey: [this.prefix] });
       return data;
     } catch (err) {
       throw wrapRpcError(err);
@@ -62,18 +60,18 @@ export class ApiCache {
 
   invalidate(keyPrefix?: string): void {
     if (!keyPrefix) {
-      this.cache.clear();
+      void queryClient.invalidateQueries({ queryKey: [this.prefix] });
       return;
     }
-    for (const key of this.cache.keys()) {
-      if (key.startsWith(keyPrefix)) {
-        this.cache.delete(key);
-      }
-    }
+    const parts = this.toKey(keyPrefix);
+    void queryClient.invalidateQueries({
+      predicate: (query) =>
+        parts.every((part, i) => query.queryKey[i] === part),
+    });
   }
 
   clear(): void {
-    this.cache.clear();
+    queryClient.removeQueries({ queryKey: [this.prefix] });
   }
 }
 

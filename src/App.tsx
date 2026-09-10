@@ -7,8 +7,10 @@ import {
   useParams,
   useRouteError,
 } from "react-router-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
 import ServiceTree from "./components/ServiceTree/ServiceTree";
 import { findService, serviceTree } from "./data/services";
+import { queryClient } from "./api/common/queryClient";
 import { NotificationsProvider } from "./notifications";
 import { useUiStore } from "./stores/ui";
 import "./App.css";
@@ -150,8 +152,10 @@ const router = createBrowserRouter([
 
 export default function App() {
   return (
-    <NotificationsProvider>
-      <RouterProvider router={router} />
-    </NotificationsProvider>
+    <QueryClientProvider client={queryClient}>
+      <NotificationsProvider>
+        <RouterProvider router={router} />
+      </NotificationsProvider>
+    </QueryClientProvider>
   );
 }

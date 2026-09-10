@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNotify } from "../../notifications";
 import { CANDLE_INTERVALS, fetchInstruments } from "../../api/scheduler";
 import * as api from "../../api/strategy";
@@ -132,44 +133,39 @@ function ActionIcon({ name }: { name: "edit" | "run" | "archive" | "unarchive" }
 export default function StrategyPanel() {
   const notify = useNotify();
   const [tab, setTab] = useState<Tab>("strategies");
-  const [instruments, setInstruments] = useState<Instrument[]>([]);
-  const [strategies, setStrategies] = useState<api.Strategy[]>([]);
-  const [reloadStrategiesToken, setReloadStrategies] = useState(0);
 
   // навигация из вкладки "Стратегии" в "Бэктест"
   const [prefillBacktestStrategy, setPrefillBacktestStrategy] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const rows = await fetchInstruments("", 5000, { lite: true });
-        if (!cancelled) {
-          setInstruments(
-            rows.map((r) => ({ uid: r.uid, ticker: r.ticker || "", name: r.name || r.uid })),
-          );
-        }
-      } catch {
-        /* каталог не критичен */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data: instruments = [] } = useQuery({
+    queryKey: ["strategyPanel", "instruments"],
+    queryFn: async () => {
+      const rows = await fetchInstruments("", 5000, { lite: true });
+      return rows.map((r) => ({ uid: r.uid, ticker: r.ticker || "", name: r.name || r.uid }));
+    },
+    staleTime: 5 * 60_000,
+  });
 
-  const loadStrategies = useCallback(async () => {
-    try {
+  const strategiesQuery = useQuery({
+    queryKey: ["strategyPanel", "strategies"],
+    queryFn: async () => {
       const res = await api.listStrategies({ limit: 500, includeArchived: true });
-      setStrategies(res.items ?? []);
-    } catch (err) {
-      notify.error(err instanceof Error ? err.message : "Не удалось загрузить стратегии");
-    }
-  }, [notify]);
+      return res.items ?? [];
+    },
+  });
+  const strategies = strategiesQuery.data ?? [];
+  const { refetch: refetchStrategies, error: strategiesError } = strategiesQuery;
+  const loadStrategies = useCallback(() => {
+    void refetchStrategies();
+  }, [refetchStrategies]);
 
   useEffect(() => {
-    void loadStrategies();
-  }, [loadStrategies, reloadStrategiesToken]);
+    if (strategiesError) {
+      notify.error(
+        strategiesError instanceof Error ? strategiesError.message : "Не удалось загрузить стратегии",
+      );
+    }
+  }, [strategiesError, notify]);
 
   return (
     <section className="panel-page strategy-panel">
@@ -206,7 +202,7 @@ export default function StrategyPanel() {
         {tab === "strategies" ? (
           <StrategiesTab
             strategies={strategies}
-            onChanged={() => setReloadStrategies((n) => n + 1)}
+            onChanged={loadStrategies}
             onRunBacktest={(id) => {
               setPrefillBacktestStrategy(id);
               setTab("backtests");
