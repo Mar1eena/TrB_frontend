@@ -1,4 +1,4 @@
-import { testClient, testPb } from "./client";
+import { instrumentsClient, instrPb } from "./client";
 
 export * from "./client";
 
@@ -11,7 +11,7 @@ function grpcError(err: unknown, fallback: string): Error {
 
 export async function syncInstruments() {
   try {
-    const resp = await testClient.syncInstruments(new testPb.SyncInstrumentsRequest());
+    const resp = await instrumentsClient.syncInstruments(new instrPb.SyncInstrumentsRequest());
     const upsert = resp.getUpsert();
     return {
       fetched: upsert?.getFetched() ?? 0,

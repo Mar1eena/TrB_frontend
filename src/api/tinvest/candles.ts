@@ -1,9 +1,13 @@
 import type { Timestamp } from "google-protobuf/google/protobuf/timestamp_pb";
 import type { UTCTimestamp } from "lightweight-charts";
-import type { HistoricCandleRow } from "@marleena/trb-proto/clickhouse/clickhouse_pb";
+import type { HistoricCandleRow } from "@marleena/trb-proto/historiccandle/historiccandle_pb";
 import { num, parseTimestamp } from "../common/converters";
 import { globalApiCache } from "../common/cache";
-import { clickhouseClient, newListCandlesRequest, setNewestFirst } from "../clickhouse/client";
+import {
+  historicCandleClient,
+  newListCandlesRequest,
+  setNewestFirst,
+} from "../historicCandle/client";
 
 export const PAGE_CANDLES = 500;
 export const PREFETCH_CANDLES = 100;
@@ -197,7 +201,7 @@ export async function fetchHistoricCandles(params: {
       if (toTs) req.setTo(toTs);
       req.setLimit(limit);
       setNewestFirst(req, newestFirst);
-      const res = await clickhouseClient.listCandles(req);
+      const res = await historicCandleClient.listCandles(req);
       const bars: CandleBar[] = [];
       for (const candle of res.getItemsList()) {
         const bar = historicCandleToBar(candle);

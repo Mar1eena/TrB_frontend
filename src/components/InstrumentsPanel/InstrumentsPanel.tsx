@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { listInstruments, listInstrumentVersions, type Instrument } from "../../api/data";
-import { syncInstruments } from "../../api/test";
+import { syncInstruments } from "../../api/instruments";
 import { formatDate, formatDateTimeMs } from "../../api/scheduler";
 import { useThrottledColumnLayout } from "../../hooks/useThrottledColumnLayout";
 import { useNotify } from "../../notifications";

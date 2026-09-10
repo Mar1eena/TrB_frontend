@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
+import type { Plugin as EsbuildPlugin } from "esbuild";
 import react from "@vitejs/plugin-react";
 
 const frontendDir = path.dirname(fileURLToPath(import.meta.url));
@@ -31,12 +32,12 @@ const protoModules = [
   "@marleena/trb-proto/postgresql/PostgresqlServiceClientPb",
   "@marleena/trb-proto/postgresql/admin_pb",
   "@marleena/trb-proto/postgresql/AdminServiceClientPb",
-  "@marleena/trb-proto/test/test_pb",
-  "@marleena/trb-proto/test/TestServiceClientPb",
+  "@marleena/trb-proto/instruments/instruments_pb",
+  "@marleena/trb-proto/instruments/InstrumentsServiceClientPb",
+  "@marleena/trb-proto/historiccandle/historiccandle_pb",
+  "@marleena/trb-proto/historiccandle/HistoriccandleServiceClientPb",
   "@marleena/trb-proto/clickhouse/admin_pb",
   "@marleena/trb-proto/clickhouse/AdminServiceClientPb",
-  "@marleena/trb-proto/clickhouse/clickhouse_pb",
-  "@marleena/trb-proto/clickhouse/ClickhouseServiceClientPb",
   "@marleena/trb-proto/indicators/indicators_pb",
   "@marleena/trb-proto/indicators/params_pb",
   "@marleena/trb-proto/indicators/IndicatorsServiceClientPb",
@@ -98,13 +99,13 @@ function protobufStaticExports(): Plugin {
   };
 }
 
-function protobufEsbuildNamedExports() {
+function protobufEsbuildNamedExports(): EsbuildPlugin {
   return {
     name: "protobuf-esbuild-named-exports",
-    setup(build: { onLoad: (opts: { filter: RegExp }, cb: (args: { path: string }) => unknown) => void }) {
+    setup(build) {
       build.onLoad({ filter: /[/\\]gen[/\\]js-ts[/\\].*_pb\.js$/ }, (args) => {
         const code = fs.readFileSync(args.path, "utf8");
-        return { contents: rewriteProtobufCjsExports(code) ?? code, loader: "js" as const };
+        return { contents: rewriteProtobufCjsExports(code) ?? code, loader: "js" };
       });
     },
   };
@@ -133,9 +134,9 @@ const envoyProxy = {
   "/trb.nats.v1.Nats_Admin": envoy,
   "/trb.postgresql.v1.PostgreSQL_Admin": envoy,
   "/trb.postgresql.v1.PostgreSQL": envoy,
-  "/trb.test.v1.Test": envoy,
+  "/trb.instruments.v1.Instruments": envoy,
+  "/trb.historiccandle.v1.HistoricCandle": envoy,
   "/trb.clickhouse.v1.ClickHouse_Admin": envoy,
-  "/trb.clickhouse.v1.ClickHouse": envoy,
   "/trb.indicators.v1.Indicator_Settings": envoy,
   "/v1": envoy,
   "^/tinkoff\\.public\\.invest\\.api\\.contract\\.v1\\..*": envoy,

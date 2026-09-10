@@ -1,15 +1,21 @@
-import { clickhouseClient, chPb, newListCandlesRequest, setNewestFirst } from "../clickhouse/client";
+import { instrumentsClient, instrPb } from "../instruments/client";
+import {
+  historicCandleClient,
+  hcPb,
+  newListCandlesRequest,
+  setNewestFirst,
+} from "../historicCandle/client";
 import { postgresqlClient, pgPb } from "../postgresql/client";
 import { SharesResponse } from "@marleena/trb-proto/api/tinvest/instruments_pb";
 import { toPlain, str, num, bool, parseTimestamp } from "../common/converters";
 import { wrapRpcError } from "../common/errors";
 
 export const DATA_API_GRPC_METHODS = [
-  { value: "ListInstruments", label: "ListInstruments", write: false, service: "ClickHouse" },
-  { value: "ListInstrumentVersions", label: "ListInstrumentVersions", write: false, service: "ClickHouse" },
-  { value: "UpsertInstruments", label: "UpsertInstruments", write: true, service: "ClickHouse" },
-  { value: "ListLastDownloads", label: "ListLastDownloads", write: false, service: "ClickHouse" },
-  { value: "ListCandles", label: "ListCandles", write: false, service: "ClickHouse" },
+  { value: "ListInstruments", label: "ListInstruments", write: false, service: "Instruments" },
+  { value: "ListInstrumentVersions", label: "ListInstrumentVersions", write: false, service: "Instruments" },
+  { value: "UpsertInstruments", label: "UpsertInstruments", write: true, service: "Instruments" },
+  { value: "ListLastDownloads", label: "ListLastDownloads", write: false, service: "HistoricCandle" },
+  { value: "ListCandles", label: "ListCandles", write: false, service: "HistoricCandle" },
   { value: "ListSchedulerTargets", label: "ListSchedulerTargets", write: false, service: "PostgreSQL" },
   { value: "SyncSchedulerTargets", label: "SyncSchedulerTargets", write: true, service: "PostgreSQL" },
 ] as const;
@@ -55,9 +61,14 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
-function listFilterFrom(request: Record<string, unknown>) {
+type ListFilterLike = {
+  setQ: (v: string) => unknown;
+  setLimit: (v: number) => unknown;
+  setOffset: (v: number) => unknown;
+};
+
+function fillListFilter<T extends ListFilterLike>(filter: T, request: Record<string, unknown>): T {
   const src = asRecord(request.filter) ?? request;
-  const filter = new chPb.ListFilter();
   const q = str(src.q);
   if (q) filter.setQ(q);
   const limit = num(src.limit);
@@ -86,7 +97,7 @@ function syncInstrumentsFrom(request: Record<string, unknown>) {
 }
 
 export function dataApiServiceName(method: DataApiGrpcMethod): string {
-  return DATA_API_GRPC_METHODS.find((item) => item.value === method)?.service ?? "ClickHouse";
+  return DATA_API_GRPC_METHODS.find((item) => item.value === method)?.service ?? "Instruments";
 }
 
 export async function callDataApiGrpc(
@@ -96,19 +107,19 @@ export async function callDataApiGrpc(
   try {
     switch (method) {
       case "ListInstruments": {
-        const req = new chPb.ListInstrumentsRequest();
-        req.setFilter(listFilterFrom(request));
+        const req = new instrPb.ListInstrumentsRequest();
+        req.setFilter(fillListFilter(new instrPb.ListFilter(), request));
         req.setLite(bool(request.lite, false));
-        return toPlain(await clickhouseClient.listInstruments(req));
+        return toPlain(await instrumentsClient.listInstruments(req));
       }
       case "ListInstrumentVersions": {
-        const req = new chPb.ListInstrumentVersionsRequest();
+        const req = new instrPb.ListInstrumentVersionsRequest();
         req.setUid(str(request.uid).trim());
-        return toPlain(await clickhouseClient.listInstrumentVersions(req));
+        return toPlain(await instrumentsClient.listInstrumentVersions(req));
       }
       case "UpsertInstruments": {
         const req = new SharesResponse();
-        return toPlain(await clickhouseClient.upsertInstruments(req));
+        return toPlain(await instrumentsClient.upsertInstruments(req));
       }
       case "ListSchedulerTargets": {
         return toPlain(
@@ -116,9 +127,9 @@ export async function callDataApiGrpc(
         );
       }
       case "ListLastDownloads": {
-        const req = new chPb.ListLastDownloadsRequest();
-        req.setFilter(listFilterFrom(request));
-        return toPlain(await clickhouseClient.listLastDownloads(req));
+        const req = new hcPb.ListLastDownloadsRequest();
+        req.setFilter(fillListFilter(new hcPb.ListFilter(), request));
+        return toPlain(await historicCandleClient.listLastDownloads(req));
       }
       case "ListCandles": {
         const req = newListCandlesRequest();
@@ -131,7 +142,7 @@ export async function callDataApiGrpc(
         const limit = num(request.limit);
         if (limit > 0) req.setLimit(limit);
         setNewestFirst(req, bool(request.newest_first, false));
-        return toPlain(await clickhouseClient.listCandles(req));
+        return toPlain(await historicCandleClient.listCandles(req));
       }
       case "SyncSchedulerTargets": {
         const req = new pgPb.SyncSchedulerTargetsRequest();

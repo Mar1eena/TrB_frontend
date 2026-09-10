@@ -1,9 +1,10 @@
-import { clickhouseClient, chPb } from "../clickhouse/client";
+import { instrumentsClient, instrPb } from "../instruments/client";
+import { historicCandleClient, hcPb } from "../historicCandle/client";
 import { postgresqlClient, pgPb } from "../postgresql/client";
 import { formatTimestamp, quotationToNumber } from "../common/converters";
 import type { Share } from "@marleena/trb-proto/api/tinvest/instruments_pb";
 import type { SchedulerTarget } from "@marleena/trb-proto/postgresql/postgresql_pb";
-import type { LastDownload } from "@marleena/trb-proto/clickhouse/clickhouse_pb";
+import type { LastDownload } from "@marleena/trb-proto/historiccandle/historiccandle_pb";
 
 export {
   DATA_API_GRPC_METHODS,
@@ -37,8 +38,9 @@ function coalesce<T>(key: string, run: () => Promise<T>): Promise<T> {
   return pending;
 }
 
-function newFilter(q: string, limit: number) {
-  const filter = new chPb.ListFilter();
+type FilterLike = { setQ: (v: string) => unknown; setLimit: (v: number) => unknown };
+
+function fillFilter<T extends FilterLike>(filter: T, q: string, limit: number): T {
   if (q.trim()) filter.setQ(q.trim());
   if (limit > 0) filter.setLimit(limit);
   return filter;
@@ -169,11 +171,11 @@ export async function listInstruments(
   const lite = opts?.lite === true;
   const key = `ListInstruments:${q.trim()}:${limit}:${lite ? 1 : 0}`;
   return coalesce(key, async () => {
-    const req = new chPb.ListInstrumentsRequest();
-    req.setFilter(newFilter(q, limit));
+    const req = new instrPb.ListInstrumentsRequest();
+    req.setFilter(fillFilter(new instrPb.ListFilter(), q, limit));
     if (lite) req.setLite(true);
     try {
-      const resp = await clickhouseClient.listInstruments(req);
+      const resp = await instrumentsClient.listInstruments(req);
       return resp.getItemsList().flatMap((row) => {
         const share = row.getShare();
         if (!share) return [];
@@ -193,10 +195,10 @@ export async function listInstruments(
 export async function listInstrumentVersions(uid: string): Promise<Instrument[]> {
   const key = `ListInstrumentVersions:${uid.trim()}`;
   return coalesce(key, async () => {
-    const req = new chPb.ListInstrumentVersionsRequest();
+    const req = new instrPb.ListInstrumentVersionsRequest();
     req.setUid(uid.trim());
     try {
-      const resp = await clickhouseClient.listInstrumentVersions(req);
+      const resp = await instrumentsClient.listInstrumentVersions(req);
       return resp.getItemsList().flatMap((row) => {
         const share = row.getShare();
         if (!share) return [];
@@ -260,10 +262,10 @@ export async function listLastDownloads(
 ) {
   const key = `ListLastDownloads:${q.trim()}:${limit}`;
   return coalesce(key, async () => {
-    const req = new chPb.ListLastDownloadsRequest();
-    req.setFilter(newFilter(q, limit));
+    const req = new hcPb.ListLastDownloadsRequest();
+    req.setFilter(fillFilter(new hcPb.ListFilter(), q, limit));
     try {
-      const resp = await clickhouseClient.listLastDownloads(req);
+      const resp = await historicCandleClient.listLastDownloads(req);
       return resp.getItemsList().map((item: LastDownload) => ({
         uid: item.getUid(),
         figi: item.getFigi(),
