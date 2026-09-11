@@ -1124,11 +1124,13 @@
   outline: none;
 }
 
+/* Рендерится порталом в document.body (см. InfoTip.tsx), top/left приходят
+   инлайн-стилем из getBoundingClientRect якоря — поэтому position: fixed и
+   без reset "bottom"/"below"-варианта через анкоринг к родителю: иначе всплывашку
+   обрезает ближайший предок с overflow (модалка, скролл-список индикаторов). */
 .infotip-pop {
-  position: absolute;
-  bottom: calc(100% + 0.35rem);
-  left: 50%;
-  transform: translateX(-50%);
+  position: fixed;
+  transform: translate(-50%, -100%);
   width: max-content;
   max-width: 18rem;
   padding: 0.45rem 0.6rem;
@@ -1142,23 +1144,12 @@
   letter-spacing: normal;
   font-weight: 400;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.12s ease;
-  z-index: 20;
+  z-index: 1000;
   pointer-events: none;
 }
 
 .infotip-pop--below {
-  bottom: auto;
-  top: calc(100% + 0.35rem);
-}
-
-.infotip:hover .infotip-pop,
-.infotip:focus-visible .infotip-pop,
-.infotip:focus .infotip-pop {
-  opacity: 1;
-  visibility: visible;
+  transform: translate(-50%, 0);
 }
 
 .field-label-with-tip {
