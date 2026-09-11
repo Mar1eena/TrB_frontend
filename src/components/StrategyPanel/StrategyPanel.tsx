@@ -22,11 +22,12 @@ import {
 import { ConfirmDialog, PromptDialog } from "./ConfirmDialog";
 import { normalizeSpec, pruneSpec } from "./specModel";
 import { ModalBackdrop } from "../common/ModalBackdrop";
+import OptunaSearchTab from "./OptunaSearchTab";
 import "../SchedulerPanel/SchedulerPanel.css";
 import "../../styles/tables.css";
 import "./StrategyPanel.css";
 
-type Tab = "strategies" | "backtests" | "search";
+type Tab = "strategies" | "backtests" | "search" | "optuna";
 type Instrument = { uid: string; ticker: string; name: string };
 
 const ACTIVE_STATUSES: api.RunStatus[] = ["RUN_QUEUED", "RUN_RUNNING"];
@@ -38,7 +39,7 @@ function intervalLabel(v: number): string {
   return CANDLE_INTERVALS.find((iv) => iv.value === v)?.label ?? String(v);
 }
 
-function statusChip(status: api.RunStatus) {
+export function statusChip(status: api.RunStatus) {
   const cls =
     status === "RUN_SUCCEEDED"
       ? "ok"
@@ -196,6 +197,13 @@ export default function StrategyPanel() {
         >
           Поиск
         </button>
+        <button
+          type="button"
+          className={`strategy-tab ${tab === "optuna" ? "is-active" : ""}`}
+          onClick={() => setTab("optuna")}
+        >
+          Поиск 2.0
+        </button>
       </div>
 
       <div className="strategy-tab-body">
@@ -219,6 +227,9 @@ export default function StrategyPanel() {
         ) : null}
         {tab === "search" ? (
           <SearchTab strategies={strategies} instruments={instruments} onCreatedStrategy={loadStrategies} />
+        ) : null}
+        {tab === "optuna" ? (
+          <OptunaSearchTab strategies={strategies} instruments={instruments} onCreatedStrategy={loadStrategies} />
         ) : null}
       </div>
     </section>

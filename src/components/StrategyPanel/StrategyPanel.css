@@ -760,6 +760,12 @@
   color: #e0637d;
 }
 
+/* Строка целевой метрики Optuna-поиска (metric + max/min + удалить) —
+   тот же .search-space-row, но с меньшим числом колонок. */
+.objective-row {
+  grid-template-columns: minmax(10rem, 1fr) 10rem 1.5rem;
+}
+
 .search-struct-grid {
   display: flex;
   flex-wrap: wrap;
