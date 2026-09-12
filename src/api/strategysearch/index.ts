@@ -211,6 +211,8 @@ export type SearchPreset = {
   createdAt?: string;
 };
 
+export type ParamImportance = { path: string; importance: number };
+
 export type Trial = {
   trialId: string;
   number: number;
@@ -278,6 +280,23 @@ export function getSearchProgress(searchId: string): Promise<SearchRun> {
 
 export function getBestTrials(searchId: string, topK = 10): Promise<{ items?: Trial[] }> {
   return call(`/searches/${encodeURIComponent(searchId)}/best${qs({ topK })}`);
+}
+
+// Все трайлы поиска (любой state), по возрастанию номера — источник для
+// графиков (история оптимизации/parallel coordinate/slice), в отличие от
+// getBestTrials, который отдаёт только complete-трайлы.
+export function listSearchTrials(
+  searchId: string,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<{ items?: Trial[]; total?: number }> {
+  return call(`/searches/${encodeURIComponent(searchId)}/trials${qs({ limit: opts.limit ?? 500, offset: opts.offset })}`);
+}
+
+// Важность параметров поиска (optuna fANOVA), считается по требованию на
+// движке через реконструкцию Study из её RDB-хранилища. Пустой список, если
+// поиск запущен без storage или трайлов ещё недостаточно.
+export function getParamImportances(searchId: string, opts: { metric?: string } = {}): Promise<{ items?: ParamImportance[] }> {
+  return call(`/searches/${encodeURIComponent(searchId)}/importances${qs({ metric: opts.metric })}`);
 }
 
 export function listSearches(opts: { status?: RunStatus; limit?: number; offset?: number } = {}): Promise<{

@@ -25,6 +25,7 @@ import {
 } from "./OptunaBuilders";
 import { optimizableParams } from "./SearchBuilders";
 import { validateOptunaSettings } from "./searchValidation";
+import { SearchCharts } from "./charts/SearchCharts";
 import { ConfirmDialog, PromptDialog } from "./ConfirmDialog";
 import { ModalBackdrop } from "../common/ModalBackdrop";
 
@@ -861,6 +862,7 @@ function OptunaSearchResultModal({
 
   const [saveTarget, setSaveTarget] = useState<api.Trial | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [resultTab, setResultTab] = useState<"best" | "charts">("best");
 
   const saveTrial = async (t: api.Trial, name: string) => {
     if (!t.spec) return;
@@ -932,8 +934,18 @@ function OptunaSearchResultModal({
           ) : null}
 
           <div className="strategy-trades">
-            <h3>{isMulti ? "Фронт Парето / лучшие трайлы" : "Лучшие трайлы"}</h3>
-            {best.length === 0 ? (
+            <div className="chart-tabs">
+              <button type="button" className={resultTab === "best" ? "active" : ""} onClick={() => setResultTab("best")}>
+                {isMulti ? "Фронт Парето / лучшие трайлы" : "Лучшие трайлы"}
+              </button>
+              <button type="button" className={resultTab === "charts" ? "active" : ""} onClick={() => setResultTab("charts")}>
+                Графики
+              </button>
+            </div>
+
+            {resultTab === "charts" ? (
+              <SearchCharts searchId={searchId} run={run} paramLabels={paramLabels} />
+            ) : best.length === 0 ? (
               <p className="hint">Пока нет завершённых трайлов.</p>
             ) : (
               <div className="table-scroll strategy-trades-scroll">

@@ -1180,3 +1180,111 @@
   display: inline-flex;
   align-items: center;
 }
+
+/* --- графики поиска 2.0 (Optuna) --- */
+
+.chart-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.chart-tabs button {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  color: var(--muted);
+  padding: 0.3rem 0.7rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.chart-tabs button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.chart-section {
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  padding: 0.8rem;
+  margin-bottom: 0.8rem;
+  background: rgba(28, 23, 48, 0.35);
+}
+
+.chart-section h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.86rem;
+  color: var(--text);
+}
+
+.chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chart-gridline {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.chart-axis {
+  stroke: var(--line);
+  stroke-width: 1.2;
+}
+
+.chart-axis-label {
+  fill: var(--muted);
+  font-size: 9px;
+}
+
+.chart-axis-title {
+  fill: var(--text);
+  font-size: 10px;
+}
+
+.chart-point {
+  fill: var(--accent);
+  stroke: rgba(0, 0, 0, 0.4);
+  stroke-width: 0.5;
+}
+
+.chart-best-line {
+  fill: none;
+  stroke: #8fc7e8;
+  stroke-width: 1.6;
+  opacity: 0.85;
+}
+
+.chart-bar {
+  fill: var(--accent);
+}
+
+.chart-param-picker {
+  max-width: 16rem;
+  margin-bottom: 0.5rem;
+}
+
+.chart-metric-tabs {
+  display: flex;
+  gap: 0.3rem;
+  margin-bottom: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.chart-metric-tabs button {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  color: var(--muted);
+  padding: 0.2rem 0.55rem;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.chart-metric-tabs button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
