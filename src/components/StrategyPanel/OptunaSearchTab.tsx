@@ -3,7 +3,7 @@
 // инлайн, поэтому «базовая стратегия» здесь — только удобная затравка для
 // встроенного SpecBuilder, а не обязательная ссылка.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNotify } from "../../notifications";
 import { CANDLE_INTERVALS } from "../../api/scheduler";
 import * as api from "../../api/strategysearch";
@@ -23,6 +23,7 @@ import {
   paramRangesToOptunaSpaceRows,
   type OptunaSpaceRow,
 } from "./OptunaBuilders";
+import { optimizableParams } from "./SearchBuilders";
 import { ConfirmDialog, PromptDialog } from "./ConfirmDialog";
 import { ModalBackdrop } from "../common/ModalBackdrop";
 
@@ -268,7 +269,7 @@ export default function OptunaSearchTab({
     void loadPresets();
   }, [loadPresets]);
 
-  const savePreset = async (presetName: string) => {
+  const savePreset = async (presetName: string, overwriteId?: string) => {
     const v = validateForm();
     if (!v) return;
     setSavingPreset(true);
@@ -280,12 +281,26 @@ export default function OptunaSearchTab({
         study: buildStudy(),
         config: buildConfig(v.startIso, v.endIso),
       });
-      notify.success("Настройки сохранены");
+      if (overwriteId) await api.deleteSearchPreset(overwriteId);
+      notify.success(overwriteId ? "Настройки перезаписаны" : "Настройки сохранены");
       await loadPresets();
     } catch (err) {
       notify.error(err instanceof Error ? err.message : "Не удалось сохранить настройки");
     } finally {
       setSavingPreset(false);
+    }
+  };
+
+  const [pendingOverwrite, setPendingOverwrite] = useState<{ name: string; id: string } | null>(null);
+
+  const requestSavePreset = (presetName: string) => {
+    const trimmed = presetName.trim();
+    if (!trimmed) return;
+    const existing = presets.find((p) => p.name === trimmed);
+    if (existing) {
+      setPendingOverwrite({ name: trimmed, id: existing.id });
+    } else {
+      void savePreset(trimmed);
     }
   };
 
@@ -327,46 +342,12 @@ export default function OptunaSearchTab({
 
   const indicatorCount = Array.isArray(spec.indicators) ? (spec.indicators as unknown[]).length : 0;
 
+  const [resultsView, setResultsView] = useState<"searches" | "strategies" | "presets">("searches");
+  const visibleStrategies = strategies.filter((s) => !s.archived);
+
   return (
     <div className="search-layout">
       <div className="filters-bar search-filters search-layout-settings">
-        <div className="search-section">
-          <p className="search-section-title">
-            Сохранённые настройки
-            <InfoTip text="Сохраняет весь текущий набор полей формы (стратегию, инструмент, цели, бюджет, семплер/прунер, пространство поиска) под именем — на сервере, доступно с любого устройства. Запуск поиска пресет не создаёт." />
-            <button
-              type="button"
-              className="btn ghost sm"
-              onClick={() => setPresetSavePrompt(true)}
-              disabled={savingPreset}
-            >
-              Сохранить текущие настройки
-            </button>
-          </p>
-          {presets.length === 0 ? (
-            <p className="hint">Сохранённых настроек пока нет.</p>
-          ) : (
-            <div className="search-chips">
-              {presets.map((p) => (
-                <span key={p.id} className="search-chip is-on">
-                  {p.name}
-                  <button type="button" className="search-space-mode" title="Загрузить" onClick={() => applyPreset(p)}>
-                    ↩
-                  </button>
-                  <button
-                    type="button"
-                    className="search-space-del"
-                    title="Удалить"
-                    onClick={() => setPresetToDelete(p)}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-
         <div className="search-section">
           <p className="search-section-title">
             Стратегия
@@ -564,64 +545,187 @@ export default function OptunaSearchTab({
         </div>
       </div>
 
-      <div className="table-scroll table-scroll-fill strategy-table-scroll search-layout-list">
-        <table className="strategy-table">
-          <thead>
-            <tr>
-              <th>Название</th>
-              <th>Инструмент</th>
-              <th>Цель</th>
-              <th>Статус</th>
-              <th className="num">Трайлов</th>
-              <th className="num">Лучшее</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {searches.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="hint">
-                  Поисков ещё нет.
-                </td>
-              </tr>
-            ) : null}
-            {searches.map((s) => {
-              const p = s.progress;
-              const metricNames = s.study?.objective?.metrics?.map((m) => m.metric).join(", ") || "—";
-              const done = (p?.completedTrials ?? 0) + (p?.prunedTrials ?? 0) + (p?.failedTrials ?? 0);
-              const bestLabel = p?.isMultiObjective
-                ? p.paretoFrontTrialIds?.length
-                  ? `Парето ×${p.paretoFrontTrialIds.length}`
-                  : "—"
-                : api.num(p?.bestValues ? Object.values(p.bestValues)[0] : undefined, 4);
-              return (
-                <tr key={s.searchId} className="is-clickable" onClick={() => setOpenSearch(s.searchId)}>
-                  <td>{s.name || <span className="mono">{s.searchId.slice(0, 8)}</span>}</td>
-                  <td className="mono">{s.config?.uid?.slice(0, 10)}</td>
-                  <td>{metricNames}</td>
-                  <td>{statusChip(p?.status ?? "RUN_QUEUED")}</td>
-                  <td className="num">
-                    {done}
-                    {p?.totalTrials ? ` / ${p.totalTrials}` : ""}
-                  </td>
-                  <td className="num">{bestLabel}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setOpenSearch(s.searchId);
-                      }}
-                    >
-                      Открыть
-                    </button>
-                  </td>
+      <div className="search-layout-list">
+        <div className="strategy-mode-switch search-layout-list-tabs">
+          <button
+            type="button"
+            className={`strategy-tab ${resultsView === "searches" ? "is-active" : ""}`}
+            onClick={() => setResultsView("searches")}
+          >
+            Результаты поиска
+          </button>
+          <button
+            type="button"
+            className={`strategy-tab ${resultsView === "strategies" ? "is-active" : ""}`}
+            onClick={() => setResultsView("strategies")}
+          >
+            Стратегии
+          </button>
+          <button
+            type="button"
+            className={`strategy-tab ${resultsView === "presets" ? "is-active" : ""}`}
+            onClick={() => setResultsView("presets")}
+          >
+            Сохранённые настройки
+          </button>
+          {resultsView === "presets" ? (
+            <button
+              type="button"
+              className="btn ghost sm search-layout-list-action"
+              onClick={() => setPresetSavePrompt(true)}
+              disabled={savingPreset}
+            >
+              Сохранить текущие настройки
+            </button>
+          ) : null}
+        </div>
+
+        {resultsView === "searches" ? (
+          <div className="table-scroll table-scroll-fill strategy-table-scroll">
+            <table className="strategy-table">
+              <thead>
+                <tr>
+                  <th>Название</th>
+                  <th>Инструмент</th>
+                  <th>Цель</th>
+                  <th>Статус</th>
+                  <th className="num">Трайлов</th>
+                  <th className="num">Лучшее</th>
+                  <th />
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {searches.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="hint">
+                      Поисков ещё нет.
+                    </td>
+                  </tr>
+                ) : null}
+                {searches.map((s) => {
+                  const p = s.progress;
+                  const metricNames = s.study?.objective?.metrics?.map((m) => m.metric).join(", ") || "—";
+                  const done = (p?.completedTrials ?? 0) + (p?.prunedTrials ?? 0) + (p?.failedTrials ?? 0);
+                  const bestLabel = p?.isMultiObjective
+                    ? p.paretoFrontTrialIds?.length
+                      ? `Парето ×${p.paretoFrontTrialIds.length}`
+                      : "—"
+                    : api.num(p?.bestValues ? Object.values(p.bestValues)[0] : undefined, 4);
+                  return (
+                    <tr key={s.searchId} className="is-clickable" onClick={() => setOpenSearch(s.searchId)}>
+                      <td>{s.name || <span className="mono">{s.searchId.slice(0, 8)}</span>}</td>
+                      <td className="mono">{s.config?.uid?.slice(0, 10)}</td>
+                      <td>{metricNames}</td>
+                      <td>{statusChip(p?.status ?? "RUN_QUEUED")}</td>
+                      <td className="num">
+                        {done}
+                        {p?.totalTrials ? ` / ${p.totalTrials}` : ""}
+                      </td>
+                      <td className="num">{bestLabel}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenSearch(s.searchId);
+                          }}
+                        >
+                          Открыть
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+
+        {resultsView === "strategies" ? (
+          <div className="table-scroll table-scroll-fill strategy-table-scroll">
+            <table className="strategy-table">
+              <thead>
+                <tr>
+                  <th>Название</th>
+                  <th>Индикаторы</th>
+                  <th>Обновлена</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {visibleStrategies.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="hint">
+                      Стратегий пока нет.
+                    </td>
+                  </tr>
+                ) : null}
+                {visibleStrategies.map((s) => {
+                  const inds = Array.isArray(s.spec?.indicators)
+                    ? (s.spec.indicators as { settings?: Record<string, unknown> }[])
+                        .map((i) => (i.settings ? Object.keys(i.settings)[0] : "?"))
+                        .join(", ")
+                    : "—";
+                  return (
+                    <tr key={s.id}>
+                      <td>
+                        <div className="strategy-name">{s.name}</div>
+                        {s.description ? <div className="strategy-sub">{s.description}</div> : null}
+                      </td>
+                      <td className="mono">{inds || "—"}</td>
+                      <td className="table-datetime">{strategyApi.fmtDateTime(s.updatedAt)}</td>
+                      <td>
+                        <button type="button" className="btn ghost" onClick={() => chooseSeedStrategy(s.id)}>
+                          Использовать как базу
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+
+        {resultsView === "presets" ? (
+          <div className="table-scroll table-scroll-fill strategy-table-scroll">
+            <table className="strategy-table">
+              <thead>
+                <tr>
+                  <th>Название</th>
+                  <th>Создано</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {presets.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="hint">
+                      Сохранённых настроек пока нет.
+                    </td>
+                  </tr>
+                ) : null}
+                {presets.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      <div className="strategy-name">{p.name}</div>
+                    </td>
+                    <td className="table-datetime">{strategyApi.fmtDateTime(p.createdAt)}</td>
+                    <td className="strategy-row-actions">
+                      <button type="button" className="btn ghost" onClick={() => applyPreset(p)}>
+                        Загрузить
+                      </button>
+                      <button type="button" className="btn ghost" onClick={() => setPresetToDelete(p)}>
+                        Удалить
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </div>
 
       {openSearch ? (
@@ -636,14 +740,29 @@ export default function OptunaSearchTab({
       {presetSavePrompt ? (
         <PromptDialog
           title="Сохранить настройки поиска"
-          message="Будут сохранены стратегия, инструмент, цели, бюджет, семплер/прунер и пространство поиска — целиком текущая форма."
+          message="Будут сохранены стратегия, инструмент, цели, бюджет, семплер/прунер и пространство поиска — целиком текущая форма. Если имя совпадёт с уже сохранённым, будет предложено перезаписать."
           label="Название"
           defaultValue={name || "Мои настройки"}
           confirmLabel="Сохранить"
           onCancel={() => setPresetSavePrompt(false)}
           onSubmit={(presetName) => {
             setPresetSavePrompt(false);
-            void savePreset(presetName);
+            requestSavePreset(presetName);
+          }}
+        />
+      ) : null}
+
+      {pendingOverwrite ? (
+        <ConfirmDialog
+          title="Перезаписать настройки"
+          message={<>Настройки «{pendingOverwrite.name}» уже существуют. Заменить их текущей формой?</>}
+          confirmLabel="Перезаписать"
+          tone="danger"
+          onCancel={() => setPendingOverwrite(null)}
+          onConfirm={() => {
+            const { name: n, id } = pendingOverwrite;
+            setPendingOverwrite(null);
+            void savePreset(n, id);
           }}
         />
       ) : null}
@@ -747,6 +866,19 @@ function OptunaSearchResultModal({
   const objectiveMetrics = run?.study?.objective?.metrics ?? [];
   const isMulti = p?.isMultiObjective ?? objectiveMetrics.length > 1;
 
+  // Человекопонятные подписи для params трайла — те же ярлыки, что в
+  // билдере пространства поиска ("RSI «rsi» · Период"), а не сырые path.
+  const paramLabels = useMemo(() => {
+    const opts = optimizableParams(run?.baseSpec);
+    return new Map(opts.map((o) => [o.path, o.label]));
+  }, [run?.baseSpec]);
+
+  const formatTrialParams = (params: Record<string, number> | undefined): string => {
+    const entries = Object.entries(params ?? {});
+    if (entries.length === 0) return "—";
+    return entries.map(([path, value]) => `${paramLabels.get(path) ?? path} = ${api.num(value, 4)}`).join("; ");
+  };
+
   return (
     <>
       <ModalBackdrop onClose={onClose} className="strategy-modal-overlay" title="Optuna-поиск">
@@ -798,6 +930,7 @@ function OptunaSearchResultModal({
                     <tr>
                       <th>#</th>
                       <th>Статус</th>
+                      <th>Параметры</th>
                       {objectiveMetrics.map((m) => (
                         <th key={m.metric} className="num">
                           {m.metric}
@@ -817,6 +950,7 @@ function OptunaSearchResultModal({
                           {t.isParetoOptimal ? " ★" : ""}
                         </td>
                         <td>{api.TRIAL_STATE_LABEL[t.state]}</td>
+                        <td className="mono strategy-sub">{formatTrialParams(t.params)}</td>
                         {objectiveMetrics.map((m) => (
                           <td key={m.metric} className="num">
                             {api.num(t.values?.[m.metric], 4)}

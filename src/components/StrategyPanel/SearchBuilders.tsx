@@ -104,7 +104,11 @@ export function optimizableParams(spec: StrategySpec | undefined): ParamOption[]
     }
   }
 
-  // Порог-константа в правиле сравнения (RSI < 30 и т.п.)
+  // Пороги-константы в правилах сравнения (RSI < 30 и т.п.) — обходим дерево
+  // целиком (compare/all/any/negate на любой глубине), а не только случай,
+  // когда всё правило — это одно голое сравнение: иначе строку с порогом
+  // невозможно добавить в пространство поиска, если условий несколько или
+  // они обёрнуты в И/ИЛИ.
   const trees: [string, string][] = [
     ["entry_long", "Порог входа в long"],
     ["exit_long", "Порог выхода из long"],
@@ -114,22 +118,55 @@ export function optimizableParams(spec: StrategySpec | undefined): ParamOption[]
   const specObj = (spec ?? {}) as Record<string, unknown>;
   for (const [snake, label] of trees) {
     const camel = snake.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-    const tree = specObj[camel] as { compare?: { right?: { constant?: number } } } | undefined;
-    if (tree?.compare?.right && typeof tree.compare.right.constant === "number") {
-      const c = tree.compare.right.constant;
+    const found: { path: string; value: number }[] = [];
+    collectComparisonThresholds(specObj[camel], snake, found);
+    found.forEach((f, i) => {
+      const c = f.value;
       out.push({
-        path: `${snake}.compare.right.constant`,
-        label,
+        path: f.path,
+        label: found.length > 1 ? `${label} · условие ${i + 1}` : label,
         group: "Пороги правил",
         kind: "float",
         min: roundTo(Math.min(c * 0.5, c - 5), 2),
         max: roundTo(Math.max(c * 1.5, c + 5), 2),
         desc: "Константа в условии сравнения — уровень, с которым поиск будет сопоставлять индикатор.",
       });
-    }
+    });
   }
 
   return out;
+}
+
+/** Обходит BoolExpr (compare/all/any/negate) и собирает path.compare.right.constant
+ * для каждого сравнения, где правый операнд — число. path — уже в snake_case,
+ * с числовыми индексами repeated-полей (indicators.all.operands.0...), которые
+ * бэкенд разбирает через protobuf-reflection (см. genome.py/paramspace.py _resolve). */
+function collectComparisonThresholds(
+  expr: unknown,
+  path: string,
+  out: { path: string; value: number }[],
+): void {
+  const e = expr && typeof expr === "object" ? (expr as Record<string, unknown>) : {};
+  if (e.compare && typeof e.compare === "object") {
+    const right = (e.compare as Record<string, unknown>).right;
+    if (right && typeof right === "object" && typeof (right as Record<string, unknown>).constant === "number") {
+      out.push({ path: `${path}.compare.right.constant`, value: (right as Record<string, unknown>).constant as number });
+    }
+    return;
+  }
+  if (e.all && typeof e.all === "object") {
+    const ops = (e.all as Record<string, unknown>).operands;
+    (Array.isArray(ops) ? ops : []).forEach((op, i) => collectComparisonThresholds(op, `${path}.all.operands.${i}`, out));
+    return;
+  }
+  if (e.any && typeof e.any === "object") {
+    const ops = (e.any as Record<string, unknown>).operands;
+    (Array.isArray(ops) ? ops : []).forEach((op, i) => collectComparisonThresholds(op, `${path}.any.operands.${i}`, out));
+    return;
+  }
+  if (e.negate != null) {
+    collectComparisonThresholds(e.negate, `${path}.negate`, out);
+  }
 }
 
 export const DEFAULT_STRUCTURE_FORM: SearchStructure = {
