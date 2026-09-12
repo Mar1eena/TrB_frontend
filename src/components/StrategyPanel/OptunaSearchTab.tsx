@@ -24,6 +24,7 @@ import {
   type OptunaSpaceRow,
 } from "./OptunaBuilders";
 import { optimizableParams } from "./SearchBuilders";
+import { validateOptunaSettings } from "./searchValidation";
 import { ConfirmDialog, PromptDialog } from "./ConfirmDialog";
 import { ModalBackdrop } from "../common/ModalBackdrop";
 
@@ -210,13 +211,8 @@ export default function OptunaSearchTab({
       notify.error("Выберите инструмент");
       return null;
     }
-    const searchSpace = optunaSpaceRowsToJson(spaceRows);
-    if (searchSpace.length === 0) {
+    if (spaceRows.length === 0) {
       notify.error("Добавьте хотя бы один параметр для оптимизации");
-      return null;
-    }
-    if (objectiveMetrics.length === 0) {
-      notify.error("Добавьте хотя бы одну целевую метрику");
       return null;
     }
     const startIso = toRfc3339(start);
@@ -225,6 +221,22 @@ export default function OptunaSearchTab({
       notify.error("Укажите период");
       return null;
     }
+    const issues = validateOptunaSettings({
+      spaceRows,
+      sampler,
+      pruner,
+      objectiveMetrics,
+      minTrades,
+      maxDrawdownLimit,
+      nTrials,
+      timeoutSeconds,
+      nJobs,
+    });
+    if (issues.length > 0) {
+      notify.error(issues[0].message);
+      return null;
+    }
+    const searchSpace = optunaSpaceRowsToJson(spaceRows);
     return { spec: s, searchSpace, startIso, endIso };
   };
 
