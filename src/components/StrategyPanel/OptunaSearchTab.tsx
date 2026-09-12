@@ -863,6 +863,7 @@ function OptunaSearchResultModal({
   const [saveTarget, setSaveTarget] = useState<api.Trial | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [resultTab, setResultTab] = useState<"best" | "charts">("best");
+  const [expanded, setExpanded] = useState(false);
 
   const saveTrial = async (t: api.Trial, name: string) => {
     if (!t.spec) return;
@@ -896,12 +897,23 @@ function OptunaSearchResultModal({
   return (
     <>
       <ModalBackdrop onClose={onClose} className="strategy-modal-overlay" title="Optuna-поиск">
-        <div className="strategy-modal wide">
+        <div className={`strategy-modal wide${expanded ? " expanded" : ""}`}>
           <header className="strategy-modal-head">
             <h2>Optuna-поиск {p ? statusChip(p.status) : null}</h2>
-            <button type="button" className="strategy-modal-close" onClick={onClose}>
-              ×
-            </button>
+            <div className="strategy-modal-head-actions">
+              <button
+                type="button"
+                className="strategy-modal-close"
+                title={expanded ? "Свернуть окно" : "Развернуть окно"}
+                aria-label={expanded ? "Свернуть окно" : "Развернуть окно"}
+                onClick={() => setExpanded((v) => !v)}
+              >
+                {expanded ? "⤡" : "⤢"}
+              </button>
+              <button type="button" className="strategy-modal-close" onClick={onClose}>
+                ×
+              </button>
+            </div>
           </header>
 
           {run ? (

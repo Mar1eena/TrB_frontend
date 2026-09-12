@@ -2,14 +2,14 @@
 // зависимости от одного параметра поиска, с выбором параметра над графиком.
 // Params в Trial — всегда числа (proto Trial.params: map<string,double>),
 // категориальные значения на этот график не попадают.
+//
+// На ECharts добавлена цветовая шкала по номеру трайла (как в оригинальном
+// optuna plot_slice) — видно, смещался ли поиск в сторону лучших значений
+// параметра по ходу оптимизации, плюс zoom/pan по обеим осям.
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type * as api from "../../../api/strategysearch";
-import { linearScale, niceDomain } from "./chartScales";
-
-const W = 640;
-const H = 220;
-const PAD = { left: 56, right: 12, top: 12, bottom: 30 };
+import { axisCommon, COLOR, FONT_FAMILY, SLICE_COLORS, tooltipStyle, useECharts } from "./echartsSetup";
 
 export function SliceChart({
   trials,
@@ -25,32 +25,61 @@ export function SliceChart({
   const [selected, setSelected] = useState(paramPaths[0] ?? "");
   const path = paramPaths.includes(selected) ? selected : paramPaths[0];
 
-  const { points, xScale, yScale, xDomain, yDomain } = useMemo(() => {
-    const complete = trials.filter(
-      (t) => t.state === "TRIAL_STATE_COMPLETE" && t.values?.[metric] != null && t.params?.[path] != null,
-    );
-    const xs = complete.map((t) => t.params![path]);
-    const ys = complete.map((t) => t.values![metric]);
-    const xDomain = niceDomain(xs);
-    const yDomain = niceDomain(ys);
-    const xScale = linearScale(xDomain, [PAD.left, W - PAD.right]);
-    const yScale = linearScale(yDomain, [H - PAD.bottom, PAD.top]);
-    const points = complete.map((t) => ({
-      number: t.number,
-      x: xScale(t.params![path]),
-      y: yScale(t.values![metric]),
-      xv: t.params![path],
-      yv: t.values![metric],
-    }));
-    return { points, xScale, yScale, xDomain, yDomain };
-  }, [trials, metric, path]);
+  const complete = trials.filter((t) => t.state === "TRIAL_STATE_COMPLETE" && t.values?.[metric] != null && t.params?.[path] != null);
+  const numbers = complete.map((t) => t.number);
+
+  const wrapRef = useECharts([trials, metric, path, paramLabels], (chart) => {
+    chart.setOption({
+      backgroundColor: "transparent",
+      textStyle: { color: COLOR.text, fontFamily: FONT_FAMILY },
+      grid: { left: 64, right: 72, top: 44, bottom: 44 },
+      tooltip: {
+        trigger: "item",
+        ...tooltipStyle,
+        formatter: (p: any) => {
+          const t = p.data.trial as api.Trial;
+          return `#${t.number}<br/>${paramLabels.get(path) ?? path}: ${t.params![path]}<br/>${metric}: ${t.values![metric].toFixed(4)}`;
+        },
+      },
+      visualMap: {
+        show: numbers.length > 1,
+        dimension: 2,
+        min: numbers.length ? Math.min(...numbers) : 0,
+        max: numbers.length ? Math.max(...numbers) : 1,
+        orient: "vertical",
+        right: 4,
+        top: "middle",
+        itemWidth: 10,
+        itemHeight: 80,
+        text: ["новее", "раньше"],
+        textStyle: { color: COLOR.muted, fontSize: 9 },
+        inRange: { color: SLICE_COLORS },
+      },
+      toolbox: {
+        right: 8,
+        top: 8,
+        iconStyle: { borderColor: COLOR.muted },
+        feature: { dataZoom: { yAxisIndex: "none" }, restore: {} },
+      },
+      dataZoom: [{ type: "inside", xAxisIndex: 0, yAxisIndex: 0 }],
+      xAxis: { type: "value", name: paramLabels.get(path) ?? path, nameTextStyle: { color: COLOR.muted, fontSize: 10 }, nameLocation: "middle", nameGap: 26, scale: true, ...axisCommon },
+      yAxis: { type: "value", name: metric, nameTextStyle: { color: COLOR.muted, fontSize: 10 }, scale: true, ...axisCommon },
+      series: [
+        {
+          type: "scatter",
+          symbolSize: 7,
+          itemStyle: { opacity: 0.85 },
+          data: complete.map((t) => ({ value: [t.params![path], t.values![metric], t.number], trial: t })),
+        },
+      ],
+    });
+  });
 
   if (paramPaths.length === 0) {
     return <p className="hint">Нет числовых параметров для среза.</p>;
   }
 
-  const xTicks = [xDomain[0], (xDomain[0] + xDomain[1]) / 2, xDomain[1]];
-  const yTicks = [yDomain[0], (yDomain[0] + yDomain[1]) / 2, yDomain[1]];
+  const empty = complete.length === 0;
 
   return (
     <div>
@@ -64,34 +93,10 @@ export function SliceChart({
           ))}
         </select>
       </label>
-      {points.length === 0 ? (
-        <p className="hint">Пока нет завершённых трайлов с этим параметром.</p>
-      ) : (
-        <svg viewBox={`0 0 ${W} ${H}`} className="chart-svg" role="img" aria-label={`Срез по параметру ${path}`}>
-          {yTicks.map((v, i) => (
-            <g key={`y${i}`}>
-              <line x1={PAD.left} x2={W - PAD.right} y1={yScale(v)} y2={yScale(v)} className="chart-gridline" />
-              <text x={PAD.left - 6} y={yScale(v)} className="chart-axis-label" textAnchor="end" dominantBaseline="middle">
-                {v.toFixed(3)}
-              </text>
-            </g>
-          ))}
-          {xTicks.map((v, i) => (
-            <text key={`x${i}`} x={xScale(v)} y={H - PAD.bottom + 16} className="chart-axis-label" textAnchor="middle">
-              {v.toFixed(3)}
-            </text>
-          ))}
-          <line x1={PAD.left} x2={W - PAD.right} y1={H - PAD.bottom} y2={H - PAD.bottom} className="chart-axis" />
-          <line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={H - PAD.bottom} className="chart-axis" />
-          {points.map((p) => (
-            <circle key={p.number} cx={p.x} cy={p.y} r={3} className="chart-point">
-              <title>
-                #{p.number}: {(paramLabels.get(path) ?? path)} = {p.xv.toFixed(4)}, {metric} = {p.yv.toFixed(4)}
-              </title>
-            </circle>
-          ))}
-        </svg>
-      )}
+      <div style={{ position: "relative" }}>
+        {empty ? <p className="hint">Пока нет завершённых трайлов с этим параметром.</p> : null}
+        <div ref={wrapRef} className="chart-echarts" aria-label={`Срез по параметру ${path}`} style={{ display: empty ? "none" : undefined }} />
+      </div>
     </div>
   );
 }

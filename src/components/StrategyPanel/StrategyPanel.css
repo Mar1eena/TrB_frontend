@@ -285,6 +285,19 @@
   width: min(72rem, 100%);
 }
 
+/* Развёрнутое окно результата поиска 2.0 — графиков много (6 штук), в
+   стандартной ширине/высоте модалки приходится много скроллить. */
+.strategy-modal.wide.expanded {
+  width: 96vw;
+  max-height: 96vh;
+}
+
+.strategy-modal-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 /* --- окно принятия решения (confirm / prompt) --- */
 
 .strategy-modal.strategy-confirm {
@@ -1219,49 +1232,6 @@
   color: var(--text);
 }
 
-.chart-svg {
-  width: 100%;
-  height: auto;
-  display: block;
-}
-
-.chart-gridline {
-  stroke: var(--line);
-  stroke-width: 1;
-}
-
-.chart-axis {
-  stroke: var(--line);
-  stroke-width: 1.2;
-}
-
-.chart-axis-label {
-  fill: var(--muted);
-  font-size: 9px;
-}
-
-.chart-axis-title {
-  fill: var(--text);
-  font-size: 10px;
-}
-
-.chart-point {
-  fill: var(--accent);
-  stroke: rgba(0, 0, 0, 0.4);
-  stroke-width: 0.5;
-}
-
-.chart-best-line {
-  fill: none;
-  stroke: #8fc7e8;
-  stroke-width: 1.6;
-  opacity: 0.85;
-}
-
-.chart-bar {
-  fill: var(--accent);
-}
-
 .chart-param-picker {
   max-width: 16rem;
   margin-bottom: 0.5rem;
@@ -1287,4 +1257,20 @@
 .chart-metric-tabs button.active {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+.chart-echarts {
+  width: 100%;
+  height: 260px;
+}
+
+.chart-echarts--tall {
+  height: 340px;
+}
+
+.chart-axis-select {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
 }

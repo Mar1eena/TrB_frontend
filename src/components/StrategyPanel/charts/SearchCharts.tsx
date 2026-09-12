@@ -1,6 +1,8 @@
 // Вкладка «Графики» результата поиска 2.0: история оптимизации, важность
-// параметров, slice-срез, parallel coordinates — по образцу optuna.visualization,
-// на своих SVG-компонентах без сторонних чарт-библиотек (см. chartScales.ts).
+// параметров, slice-срез, parallel coordinates, EDF и contour — по образцу
+// optuna.visualization, но на ECharts (echartsSetup.ts) вместо ручных SVG:
+// зум/пан, тултипы со всеми параметрами трайла, brushing по осям parallel
+// coordinates, экспорт в PNG.
 //
 // Данные грузятся один раз при открытии и повторно — при завершении поиска
 // или по кнопке «Обновить», а НЕ на каждый poll-тик прогресса (импортансы
@@ -8,6 +10,8 @@
 
 import { useEffect, useState } from "react";
 import * as api from "../../../api/strategysearch";
+import { ContourChart } from "./ContourChart";
+import { EdfChart } from "./EdfChart";
 import { OptimizationHistoryChart } from "./OptimizationHistoryChart";
 import { ParallelCoordinatesChart } from "./ParallelCoordinatesChart";
 import { ParamImportanceChart } from "./ParamImportanceChart";
@@ -108,7 +112,7 @@ export function SearchCharts({
 
       <div className="chart-section">
         <h4>История оптимизации</h4>
-        <OptimizationHistoryChart trials={trials} metric={metric} maximize={maximize} />
+        <OptimizationHistoryChart trials={trials} metric={metric} maximize={maximize} paramLabels={paramLabels} />
       </div>
 
       <div className="chart-section">
@@ -124,6 +128,16 @@ export function SearchCharts({
       <div className="chart-section">
         <h4>Parallel coordinates</h4>
         <ParallelCoordinatesChart trials={trials} paramPaths={paramPaths} metric={metric} maximize={maximize} paramLabels={paramLabels} />
+      </div>
+
+      <div className="chart-section">
+        <h4>Распределение значений цели (EDF)</h4>
+        <EdfChart trials={trials} metric={metric} />
+      </div>
+
+      <div className="chart-section">
+        <h4>Contour</h4>
+        <ContourChart trials={trials} metric={metric} paramPaths={paramPaths} paramLabels={paramLabels} />
       </div>
     </div>
   );
