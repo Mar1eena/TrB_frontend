@@ -2,32 +2,22 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query";
 import { useNotify } from "../../notifications";
 import { CANDLE_INTERVALS, fetchInstruments } from "../../api/scheduler";
-import * as api from "../../api/strategy";
+import * as api from "../../api/strategysearch";
 import { BLANK_TEMPLATE, SPEC_TEMPLATES, type SpecTemplate } from "./templates";
 import EquityChart from "./EquityChart";
 import PriceChart from "./PriceChart";
 import TradesTable from "./TradesTable";
 import SpecBuilder from "./SpecBuilder";
-import { InfoTip } from "./InfoTip";
-import {
-  DEFAULT_SPACE_ROWS,
-  DEFAULT_STRUCTURE_FORM,
-  SearchSpaceBuilder,
-  SearchStructureBuilder,
-  spaceRowsToJson,
-  structureToJson,
-  type SearchStructure,
-  type SpaceRow,
-} from "./SearchBuilders";
-import { ConfirmDialog, PromptDialog } from "./ConfirmDialog";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { normalizeSpec, pruneSpec } from "./specModel";
 import { ModalBackdrop } from "../common/ModalBackdrop";
+import { isoDaysAgo, toRfc3339, toLocalInput } from "./searchForm";
 import OptunaSearchTab from "./OptunaSearchTab";
 import "../SchedulerPanel/SchedulerPanel.css";
 import "../../styles/tables.css";
 import "./StrategyPanel.css";
 
-type Tab = "strategies" | "backtests" | "search" | "optuna";
+type Tab = "strategies" | "backtests" | "optuna";
 type Instrument = { uid: string; ticker: string; name: string };
 
 const ACTIVE_STATUSES: api.RunStatus[] = ["RUN_QUEUED", "RUN_RUNNING"];
@@ -35,8 +25,8 @@ const ACTIVE_STATUSES: api.RunStatus[] = ["RUN_QUEUED", "RUN_RUNNING"];
 // Бэкенд без поля include_indicators отвечает ошибкой — узнаём один раз за сессию.
 let indicatorsSupported = true;
 
-function intervalLabel(v: number): string {
-  return CANDLE_INTERVALS.find((iv) => iv.value === v)?.label ?? String(v);
+function intervalLabel(v: number | undefined): string {
+  return CANDLE_INTERVALS.find((iv) => iv.value === v)?.label ?? String(v ?? "—");
 }
 
 export function statusChip(status: api.RunStatus) {
@@ -86,27 +76,6 @@ function fmtElapsed(ms: number): string {
   return m > 0 ? `${m} мин ${s % 60} с` : `${s} с`;
 }
 
-function isoDaysAgo(days: number): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - days);
-  d.setUTCHours(0, 0, 0, 0);
-  return d.toISOString();
-}
-
-function toRfc3339(local: string): string {
-  // datetime-local -> RFC3339 UTC
-  if (!local) return "";
-  const d = new Date(local);
-  return Number.isNaN(d.getTime()) ? "" : d.toISOString();
-}
-
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 function ActionIcon({ name }: { name: "edit" | "run" | "archive" | "unarchive" }) {
   const paths: Record<string, ReactNode> = {
     edit: <path d="M4 13.5V16h2.5l7.4-7.4-2.5-2.5L4 13.5zM15.7 6.3a.7.7 0 0 0 0-1L14.7 4.3a.7.7 0 0 0-1 0l-1 1 2.5 2.5 1-1.5z" />,
@@ -140,7 +109,7 @@ export default function StrategyPanel() {
 
   const { data: instruments = [] } = useQuery({
     queryKey: ["strategyPanel", "instruments"],
-    queryFn: async () => {
+    queryFn: async (): Promise<Instrument[]> => {
       const rows = await fetchInstruments("", 5000, { lite: true });
       return rows.map((r) => ({ uid: r.uid, ticker: r.ticker || "", name: r.name || r.uid }));
     },
@@ -192,13 +161,6 @@ export default function StrategyPanel() {
         </button>
         <button
           type="button"
-          className={`strategy-tab ${tab === "search" ? "is-active" : ""}`}
-          onClick={() => setTab("search")}
-        >
-          Поиск
-        </button>
-        <button
-          type="button"
           className={`strategy-tab ${tab === "optuna" ? "is-active" : ""}`}
           onClick={() => setTab("optuna")}
         >
@@ -225,18 +187,11 @@ export default function StrategyPanel() {
             onPrefillConsumed={() => setPrefillBacktestStrategy(null)}
           />
         ) : null}
-        {tab === "search" ? (
-          <SearchTab strategies={strategies} instruments={instruments} onCreatedStrategy={loadStrategies} />
-        ) : null}
-        {tab === "optuna" ? (
-          <OptunaSearchTab strategies={strategies} instruments={instruments} onCreatedStrategy={loadStrategies} />
-        ) : null}
+        {tab === "optuna" ? <OptunaSearchTab instruments={instruments} /> : null}
       </div>
     </section>
   );
 }
-
-/* ---------------- Стратегии ---------------- */
 
 function StrategiesTab({
   strategies,
@@ -1174,464 +1129,3 @@ function BacktestResultModal({
   );
 }
 
-/* ---------------- Поиск ---------------- */
-
-function SearchTab({
-  strategies,
-  instruments,
-  onCreatedStrategy,
-}: {
-  strategies: api.Strategy[];
-  instruments: Instrument[];
-  onCreatedStrategy: () => void;
-}) {
-  const notify = useNotify();
-  const [baseStrategyId, setBaseStrategyId] = useState("");
-  const [uid, setUid] = useState("");
-  const [interval, setIntervalVal] = useState(5);
-  const [start, setStart] = useState(() => toLocalInput(isoDaysAgo(365)));
-  const [end, setEnd] = useState(() => toLocalInput(new Date().toISOString()));
-  const [metric, setMetric] = useState("sharpe");
-  const [minTrades, setMinTrades] = useState(10);
-  const [population, setPopulation] = useState(20);
-  const [generations, setGenerations] = useState(8);
-  const [maxSeconds, setMaxSeconds] = useState(600);
-  const [spaceRows, setSpaceRows] = useState<SpaceRow[]>(DEFAULT_SPACE_ROWS);
-  const [structure, setStructure] = useState<SearchStructure>(DEFAULT_STRUCTURE_FORM);
-  const [submitting, setSubmitting] = useState(false);
-
-  const baseSpec = strategies.find((s) => s.id === baseStrategyId)?.spec;
-
-  const [searches, setSearches] = useState<api.SearchRun[]>([]);
-  const [openSearch, setOpenSearch] = useState<string | null>(null);
-
-  const loadSearches = useCallback(async () => {
-    try {
-      const res = await api.listSearches({ limit: 100 });
-      setSearches(res.items ?? []);
-    } catch (err) {
-      notify.error(err instanceof Error ? err.message : "Не удалось загрузить поиски");
-    }
-  }, [notify]);
-
-  useEffect(() => {
-    void loadSearches();
-  }, [loadSearches]);
-
-  useEffect(() => {
-    if (openSearch) return; // при открытой модалке прогресс тянет она сама
-    const hasActive = searches.some((s) =>
-      ACTIVE_STATUSES.includes(s.progress?.status ?? "RUN_QUEUED"),
-    );
-    if (!hasActive) return;
-    const id = window.setInterval(() => void loadSearches(), 6000);
-    return () => window.clearInterval(id);
-  }, [searches, loadSearches, openSearch]);
-
-  const submit = async () => {
-    if (!baseStrategyId) {
-      notify.error("Выберите базовую стратегию");
-      return;
-    }
-    if (!uid) {
-      notify.error("Выберите инструмент");
-      return;
-    }
-    const searchSpace = spaceRowsToJson(spaceRows);
-    if (searchSpace.length === 0) {
-      notify.error("Добавьте хотя бы один параметр для оптимизации");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await api.submitSearch({
-        baseStrategyId,
-        objective: { metric, maximize: true, minTrades },
-        budget: { population, generations, maxSeconds, concurrency: 2 },
-        config: {
-          uid,
-          interval,
-          start: toRfc3339(start),
-          end: toRfc3339(end),
-          initialCash: 100000,
-          commissionPct: 0.0005,
-          longOnly: true,
-        },
-        searchSpace,
-        structure: structureToJson(structure),
-      });
-      notify.success("Поиск запущен");
-      await loadSearches();
-      setOpenSearch(res.searchId);
-    } catch (err) {
-      notify.error(err instanceof Error ? err.message : "Не удалось запустить поиск");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="search-layout">
-      <div className="filters-bar search-filters search-layout-settings">
-        <div className="search-section">
-          <p className="search-section-title">
-            Данные
-            <InfoTip text="Стратегия-заготовка, инструмент и период истории, на котором поиск оценивает кандидатов." />
-          </p>
-          <div className="filters-row filters-fields">
-            <label className="filter-field" style={{ flexBasis: "16rem" }}>
-              <span>Базовая стратегия</span>
-              <select value={baseStrategyId} onChange={(e) => setBaseStrategyId(e.target.value)}>
-                <option value="">— выберите —</option>
-                {strategies
-                  .filter((s) => !s.archived)
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label className="filter-field">
-              <span>Инструмент</span>
-              <input list="strategy-instruments-search" value={uid} onChange={(e) => setUid(e.target.value.trim())} />
-              <datalist id="strategy-instruments-search">
-                {instruments.slice(0, 2000).map((i) => (
-                  <option key={i.uid} value={i.uid}>
-                    {i.ticker} — {i.name}
-                  </option>
-                ))}
-              </datalist>
-            </label>
-            <label className="filter-field">
-              <span>Интервал</span>
-              <select value={interval} onChange={(e) => setIntervalVal(Number(e.target.value))}>
-                {CANDLE_INTERVALS.map((iv) => (
-                  <option key={iv.value} value={iv.value}>
-                    {iv.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="filter-field">
-              <span>С</span>
-              <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
-            </label>
-            <label className="filter-field">
-              <span>По</span>
-              <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
-            </label>
-          </div>
-        </div>
-
-        <div className="search-section">
-          <p className="search-section-title">
-            Цель оптимизации
-            <InfoTip text="Метрика, которую поиск максимизирует, и минимальное число сделок, чтобы результат не был случайным." />
-          </p>
-          <div className="filters-row filters-fields">
-            <label className="filter-field">
-              <span>
-                Метрика
-                <InfoTip text="Sharpe — доходность на риск; CAGR — годовой рост; CAGR/MaxDD — рост с поправкой на просадку; SQN — качество системы; Доходность — суммарная за период." />
-              </span>
-              <select value={metric} onChange={(e) => setMetric(e.target.value)}>
-                <option value="sharpe">Sharpe</option>
-                <option value="cagr">CAGR</option>
-                <option value="cagr_over_maxdd">CAGR / MaxDD</option>
-                <option value="sqn">SQN</option>
-                <option value="total_return">Доходность</option>
-              </select>
-            </label>
-            <label className="filter-field">
-              <span>
-                Мин. сделок
-                <InfoTip text="Кандидаты с меньшим числом закрытых сделок отбраковываются — по 2–3 сделкам метрика недостоверна." />
-              </span>
-              <input type="number" value={minTrades} onChange={(e) => setMinTrades(Number(e.target.value))} />
-            </label>
-          </div>
-        </div>
-
-        <div className="search-section">
-          <p className="search-section-title">
-            Бюджет поиска
-            <InfoTip text="Сколько вариантов перебрать: популяция × поколения ≈ число бэктестов. Лимит по времени останавливает поиск досрочно." />
-          </p>
-          <div className="filters-row filters-fields">
-            <label className="filter-field">
-              <span>
-                Популяция
-                <InfoTip text="Сколько стратегий-кандидатов живёт в одном поколении. Больше — шире охват, но дольше." />
-              </span>
-              <input type="number" value={population} onChange={(e) => setPopulation(Number(e.target.value))} />
-            </label>
-            <label className="filter-field">
-              <span>
-                Поколений
-                <InfoTip text="Сколько раз популяция скрещивается и мутирует. Больше — глубже оптимизация." />
-              </span>
-              <input type="number" value={generations} onChange={(e) => setGenerations(Number(e.target.value))} />
-            </label>
-            <label className="filter-field">
-              <span>
-                Лимит, сек
-                <InfoTip text="Жёсткий предел на время всего поиска. По достижении возвращаются лучшие найденные к этому моменту." />
-              </span>
-              <input type="number" value={maxSeconds} onChange={(e) => setMaxSeconds(Number(e.target.value))} />
-            </label>
-          </div>
-        </div>
-
-        <div className="search-builders">
-          <SearchSpaceBuilder rows={spaceRows} onChange={setSpaceRows} spec={baseSpec} />
-          <SearchStructureBuilder value={structure} onChange={setStructure} />
-        </div>
-        <div className="filters-row filters-actions">
-          <button type="button" className="btn primary" onClick={() => void submit()} disabled={submitting}>
-            {submitting ? "Запуск…" : "Запустить поиск"}
-          </button>
-          <button type="button" className="btn ghost" onClick={() => void loadSearches()}>
-            Обновить
-          </button>
-        </div>
-      </div>
-
-      <div className="table-scroll table-scroll-fill strategy-table-scroll search-layout-list">
-        <table className="strategy-table">
-          <thead>
-            <tr>
-              <th>Название</th>
-              <th>Инструмент</th>
-              <th>Цель</th>
-              <th>Статус</th>
-              <th className="num">Оценено</th>
-              <th className="num">Лучший score</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {searches.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="hint">
-                  Поисков ещё нет.
-                </td>
-              </tr>
-            ) : null}
-            {searches.map((s) => (
-              <tr key={s.searchId} className="is-clickable" onClick={() => setOpenSearch(s.searchId)}>
-                <td>{s.name || <span className="mono">{s.searchId.slice(0, 8)}</span>}</td>
-                <td className="mono">{s.config?.uid?.slice(0, 10)}</td>
-                <td>{s.objective?.metric}</td>
-                <td>{statusChip(s.progress?.status ?? "RUN_QUEUED")}</td>
-                <td className="num">
-                  {s.progress?.evaluated ?? 0}
-                  {s.progress?.total ? ` / ${s.progress.total}` : ""}
-                </td>
-                <td className="num">{api.num(s.progress?.bestScore, 4)}</td>
-                <td>
-                  <button
-                    type="button"
-                    className="btn ghost"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOpenSearch(s.searchId);
-                    }}
-                  >
-                    Открыть
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {openSearch ? (
-        <SearchResultModal
-          searchId={openSearch}
-          onClose={() => setOpenSearch(null)}
-          onRefreshList={loadSearches}
-          onCreatedStrategy={onCreatedStrategy}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function SearchResultModal({
-  searchId,
-  onClose,
-  onRefreshList,
-  onCreatedStrategy,
-}: {
-  searchId: string;
-  onClose: () => void;
-  onRefreshList: () => void;
-  onCreatedStrategy: () => void;
-}) {
-  const notify = useNotify();
-  const [run, setRun] = useState<api.SearchRun | null>(null);
-  const [best, setBest] = useState<api.SearchCandidate[]>([]);
-  const pollRef = useRef<number | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const [progress, bestRes] = await Promise.all([
-        api.getSearchProgress(searchId),
-        api.getBestStrategies(searchId, 10).catch(() => ({ items: [] as api.SearchCandidate[] })),
-      ]);
-      setRun(progress);
-      setBest(bestRes.items ?? []);
-      return progress.progress?.status ?? "RUN_QUEUED";
-    } catch (err) {
-      notify.error(err instanceof Error ? err.message : "Ошибка");
-      return "RUN_FAILED" as api.RunStatus;
-    }
-  }, [searchId, notify]);
-
-  useEffect(() => {
-    let stopped = false;
-    void (async () => {
-      const status = await load();
-      if (!stopped && ACTIVE_STATUSES.includes(status)) {
-        pollRef.current = window.setInterval(async () => {
-          const s = await load();
-          if (!ACTIVE_STATUSES.includes(s)) {
-            if (pollRef.current) window.clearInterval(pollRef.current);
-            onRefreshList();
-          }
-        }, 4000);
-      }
-    })();
-    return () => {
-      stopped = true;
-      if (pollRef.current) window.clearInterval(pollRef.current);
-    };
-  }, [load, onRefreshList]);
-
-  const cancel = async () => {
-    try {
-      await api.cancelSearch(searchId);
-      notify.info("Отмена запрошена");
-      void load();
-      onRefreshList();
-    } catch (err) {
-      notify.error(err instanceof Error ? err.message : "Ошибка");
-    }
-  };
-
-  const [saveTarget, setSaveTarget] = useState<api.SearchCandidate | null>(null);
-
-  const saveCandidate = async (c: api.SearchCandidate, name: string) => {
-    try {
-      await api.createStrategy({ name, description: `Из поиска ${searchId}`, spec: c.spec });
-      notify.success("Стратегия создана");
-      onCreatedStrategy();
-    } catch (err) {
-      notify.error(err instanceof Error ? err.message : "Не удалось создать");
-    }
-  };
-
-  const p = run?.progress;
-  const active = ACTIVE_STATUSES.includes(p?.status ?? "RUN_QUEUED");
-
-  return (
-    <>
-    <ModalBackdrop onClose={onClose} className="strategy-modal-overlay" title="Поиск">
-      <div className="strategy-modal wide">
-        <header className="strategy-modal-head">
-          <h2>Поиск {p ? statusChip(p.status) : null}</h2>
-          <button type="button" className="strategy-modal-close" onClick={onClose}>
-            ×
-          </button>
-        </header>
-
-        {run ? (
-          <div className="strategy-result-meta">
-            <span className="mono">{run.config?.uid}</span> · цель <b>{run.objective?.metric}</b> ·{" "}
-            поколение {p?.currentGeneration ?? 0} · оценено {p?.evaluated ?? 0}
-            {p?.total ? ` из ${p.total}` : ""} · лучший score{" "}
-            <b>{api.num(p?.bestScore, 4)}</b>
-            {p?.error ? <div className="strategy-error">{p.error}</div> : null}
-          </div>
-        ) : null}
-
-        {active ? (
-          <div className="strategy-running">
-            <span className="strategy-spinner" /> Поиск идёт…
-            <button type="button" className="btn ghost" onClick={() => void cancel()}>
-              Отменить
-            </button>
-          </div>
-        ) : null}
-
-        <div className="strategy-trades">
-          <h3>Лучшие кандидаты</h3>
-          {best.length === 0 ? (
-            <p className="hint">Пока нет оценённых кандидатов.</p>
-          ) : (
-            <div className="table-scroll strategy-trades-scroll">
-              <table className="strategy-table compact">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th className="num">Score</th>
-                    <th className="num">Доходность</th>
-                    <th className="num">CAGR</th>
-                    <th className="num">Sharpe</th>
-                    <th className="num">Просадка</th>
-                    <th className="num">Сделок</th>
-                    <th>Пок.</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {best.map((c) => (
-                    <tr key={c.id}>
-                      <td>{c.rank || "—"}</td>
-                      <td className="num">{api.num(c.score, 4)}</td>
-                      <td className="num">{api.pct(c.metrics?.totalReturn)}</td>
-                      <td className="num">{api.pct(c.metrics?.cagr)}</td>
-                      <td className="num">{api.num(c.metrics?.sharpe)}</td>
-                      <td className="num">{api.pct(c.metrics?.maxDrawdown)}</td>
-                      <td className="num">{c.metrics?.tradesCount ?? "—"}</td>
-                      <td>{c.generation}</td>
-                      <td>
-                        <button type="button" className="btn ghost" onClick={() => setSaveTarget(c)}>
-                          Сохранить
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-    </ModalBackdrop>
-
-      {saveTarget ? (
-        <PromptDialog
-          title="Сохранить как стратегию"
-          message={
-            <>
-              Кандидат #{saveTarget.rank || "—"} · score {api.num(saveTarget.score, 4)} — будет
-              добавлен в каталог стратегий.
-            </>
-          }
-          label="Название стратегии"
-          defaultValue={`${run?.name || "Поиск"} #${saveTarget.rank || saveTarget.generation}`}
-          confirmLabel="Сохранить"
-          onCancel={() => setSaveTarget(null)}
-          onSubmit={(name) => {
-            const c = saveTarget;
-            setSaveTarget(null);
-            void saveCandidate(c, name);
-          }}
-        />
-      ) : null}
-    </>
-  );
-}

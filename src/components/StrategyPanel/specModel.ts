@@ -5,7 +5,7 @@
 // произвольный вход (шаблон, ответ сервера, вставленный JSON) к предсказуемой
 // форме и убирают пустые ветки перед сохранением.
 
-import type { StrategySpec } from "../../api/strategy";
+import type { StrategySpec } from "../../api/strategysearch";
 import { ENUMS } from "./specSchema.generated";
 
 export type Json = Record<string, unknown>;

@@ -110,34 +110,43 @@ export function SearchCharts({
         </button>
       </div>
 
-      <div className="chart-section">
-        <h4>История оптимизации</h4>
-        <OptimizationHistoryChart trials={trials} metric={metric} maximize={maximize} paramLabels={paramLabels} />
-      </div>
+      <div className="chart-grid">
+        <div className="chart-section chart-section-wide">
+          <h4>История оптимизации</h4>
+          <OptimizationHistoryChart trials={trials} metric={metric} maximize={maximize} paramLabels={paramLabels} />
+        </div>
 
-      <div className="chart-section">
-        <h4>Важность параметров</h4>
-        <ParamImportanceChart items={importances} paramLabels={paramLabels} />
-      </div>
+        <div className="chart-section">
+          <h4>Важность параметров</h4>
+          <ParamImportanceChart items={importances} paramLabels={paramLabels} />
+        </div>
 
-      <div className="chart-section">
-        <h4>Срез по параметру</h4>
-        <SliceChart trials={trials} metric={metric} paramPaths={paramPaths} paramLabels={paramLabels} />
-      </div>
+        <div className="chart-section chart-section-wide">
+          <h4>Срез по параметру</h4>
+          <SliceChart trials={trials} metric={metric} paramPaths={paramPaths} paramLabels={paramLabels} />
+        </div>
 
-      <div className="chart-section">
-        <h4>Parallel coordinates</h4>
-        <ParallelCoordinatesChart trials={trials} paramPaths={paramPaths} metric={metric} maximize={maximize} paramLabels={paramLabels} />
-      </div>
+        <div className="chart-section chart-section-wide">
+          <h4>Parallel coordinates</h4>
+          <ParallelCoordinatesChart
+            trials={trials}
+            paramPaths={paramPaths}
+            metric={metric}
+            maximize={maximize}
+            paramLabels={paramLabels}
+            importances={importances}
+          />
+        </div>
 
-      <div className="chart-section">
-        <h4>Распределение значений цели (EDF)</h4>
-        <EdfChart trials={trials} metric={metric} />
-      </div>
+        <div className="chart-section">
+          <h4>Распределение значений цели (EDF)</h4>
+          <EdfChart trials={trials} metric={metric} />
+        </div>
 
-      <div className="chart-section">
-        <h4>Contour</h4>
-        <ContourChart trials={trials} metric={metric} paramPaths={paramPaths} paramLabels={paramLabels} />
+        <div className="chart-section">
+          <h4>Contour</h4>
+          <ContourChart trials={trials} metric={metric} paramPaths={paramPaths} paramLabels={paramLabels} />
+        </div>
       </div>
     </div>
   );

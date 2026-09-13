@@ -8,7 +8,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { CandleBar } from "../../api/tinvest/candles";
-import type { BacktestConfig, TradeRecord } from "../../api/strategy";
+import type { BacktestConfig, TradeRecord } from "../../api/strategysearch";
 import {
   createCandleChart,
   createCandleSeriesPair,
@@ -265,9 +265,9 @@ export default function PriceChart({
     seedsRef.current = [];
 
     const nowSec = Math.floor(Date.now() / 1000);
-    store.reset(config.uid, config.interval, {
-      fromSec: toSec(config.start),
-      toSec: Math.min(nowSec, toSec(config.end)),
+    store.reset(config.uid ?? "", config.interval ?? 0, {
+      fromSec: toSec(config.start ?? ""),
+      toSec: Math.min(nowSec, toSec(config.end ?? "")),
     });
     void store.loadInitial(initialVisibleCount(wrap?.clientWidth || 800));
     // eslint-disable-next-line react-hooks/exhaustive-deps

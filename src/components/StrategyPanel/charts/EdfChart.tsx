@@ -38,7 +38,7 @@ export function EdfChart({
         right: 8,
         top: 8,
         iconStyle: { borderColor: COLOR.muted },
-        feature: { dataZoom: { yAxisIndex: "none" }, restore: {} },
+        feature: { saveAsImage: {}, dataZoom: { yAxisIndex: "none" }, restore: {} },
       },
       dataZoom: [{ type: "inside", xAxisIndex: 0 }],
       xAxis: { type: "value", name: metric, nameLocation: "middle", nameGap: 26, nameTextStyle: { color: COLOR.muted, fontSize: 10 }, scale: true, ...axisCommon },

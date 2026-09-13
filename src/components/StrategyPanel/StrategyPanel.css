@@ -285,11 +285,41 @@
   width: min(72rem, 100%);
 }
 
-/* Развёрнутое окно результата поиска 2.0 — графиков много (6 штук), в
-   стандартной ширине/высоте модалки приходится много скроллить. */
-.strategy-modal.wide.expanded {
-  width: 96vw;
-  max-height: 96vh;
+/* --- полноэкранный вид результата поиска 2.0 (не модалка-карточка: занимает
+   весь вьюпорт, т.к. графиков много и в карточке фиксированной ширины
+   приходится много скроллить) --- */
+
+.strategy-fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  /* Тот же уровень, что у .strategy-modal-overlay: вложенные диалоги этого
+     экрана (например подтверждение отмены поиска) монтируются в DOM позже и
+     благодаря этому оказываются выше при равном z-index. */
+  z-index: 100;
+  background: #100c1c;
+  display: flex;
+  flex-direction: column;
+}
+
+.strategy-fullscreen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.strategy-fullscreen-head {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 0.6rem;
+  padding: 1rem 1.6rem;
+  border-bottom: 1px solid var(--line);
+  background: #161221;
+}
+
+.strategy-fullscreen-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 1.2rem 1.6rem 2rem;
 }
 
 .strategy-modal-head-actions {
@@ -689,6 +719,114 @@
 .search-builders {
   display: grid;
   gap: 0.75rem;
+}
+
+/* --- аккордеон секций формы (Поиск 2.0), см. SearchAccordion.tsx --- */
+
+.search-accordion-section {
+  padding-bottom: 0;
+}
+
+.search-accordion-section.is-collapsed {
+  padding-bottom: 0.55rem;
+}
+
+.search-accordion-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0 0 0.4rem;
+  margin: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.search-accordion-arrow {
+  color: var(--muted, #9a90b8);
+  font-size: 0.75rem;
+  width: 0.9em;
+  flex: none;
+}
+
+.search-section-title-text {
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--text, #efe8f8);
+}
+
+.search-accordion-badge {
+  margin-left: auto;
+  background: rgba(224, 99, 125, 0.22);
+  border: 1px solid rgba(224, 99, 125, 0.55);
+  color: #f0a8a8;
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.search-accordion-body {
+  display: grid;
+  gap: 0.55rem;
+  padding-top: 0.1rem;
+}
+
+/* Кнопки «Запустить поиск»/«Обновить» раньше были в самом низу длинного
+   скролла — теперь липнут к низу той же прокручиваемой области
+   (.filters-bar.search-filters), видны без докрутки до конца формы. */
+.search-actions-sticky {
+  position: sticky;
+  bottom: -0.1rem;
+  margin: 0.2rem -0.1rem -0.1rem;
+  padding: 0.6rem 0.1rem 0.1rem;
+  background: linear-gradient(rgba(18, 8, 28, 0), var(--bg-1, #1a0f2e) 35%);
+  z-index: 1;
+}
+
+.search-actions-issues {
+  margin-left: auto;
+  background: rgba(224, 99, 125, 0.16);
+  border: 1px solid rgba(224, 99, 125, 0.5);
+  color: #f0a8a8;
+  border-radius: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.search-actions-issues:hover {
+  background: rgba(224, 99, 125, 0.26);
+}
+
+/* --- фильтр над таблицами правой колонки (Результаты/Стратегии/Пресеты) --- */
+
+.search-results-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.search-results-filter input[type="search"] {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 0.3rem 0.5rem;
+  background: rgba(15, 12, 28, 0.6);
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  color: inherit;
+  font-size: 0.82rem;
+}
+
+.search-results-filter .search-chips {
+  flex: 1 1 auto;
 }
 
 .search-builder {
@@ -1218,12 +1356,32 @@
   background: var(--accent-dim);
 }
 
+/* Полноэкранный вид (см. .strategy-fullscreen-*) даёт заметно больше ширины,
+   чем прежняя модалка — при 26rem минимуме на карточку широкий монитор
+   помещал только 2 в ряд; на 22rem влезает 3-4, а узкие карточки (важность,
+   EDF, contour) от этого не мельчают. История/срез/parallel coordinates —
+   на всю ширину (нужна широкая ось/легенда/сетка мини-графиков). */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80rem, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
 .chart-section {
   border: 1px solid var(--line);
   border-radius: 0.6rem;
   padding: 0.8rem;
   margin-bottom: 0.8rem;
   background: rgba(28, 23, 48, 0.35);
+}
+
+.chart-grid .chart-section {
+  margin-bottom: 0;
+}
+
+.chart-section-wide {
+  grid-column: 1 / -1;
 }
 
 .chart-section h4 {
@@ -1259,13 +1417,92 @@
   border-color: var(--accent);
 }
 
+/* clamp() вместо фиксированных px — в полноэкранном виде графикам есть куда
+   расти по высоте (useECharts следит за ResizeObserver и сам перерисует
+   инстанс), но верхняя граница не даёт им растянуться до нечитаемых
+   пропорций на сверхвысоких мониторах. */
 .chart-echarts {
   width: 100%;
-  height: 260px;
+  height: clamp(240px, 30vh, 420px);
 }
 
 .chart-echarts--tall {
-  height: 340px;
+  height: clamp(320px, 42vh, 560px);
+}
+
+/* --- множественный выбор параметров (Parallel coordinates, Slice) --- */
+
+.chart-param-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+.chart-param-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.76rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.chart-param-pill input {
+  accent-color: var(--accent);
+}
+
+.chart-param-pill.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.chart-param-checklist-actions {
+  display: flex;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+.chart-param-checklist-actions button {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 0.35rem;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.chart-param-checklist-actions button:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Slice: сетка мини-графиков по одному на выбранный параметр (small multiples). */
+.chart-slice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 0.8rem;
+}
+
+.chart-slice-cell {
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.6rem;
+  background: rgba(20, 16, 32, 0.3);
+}
+
+.chart-slice-cell h5 {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 500;
 }
 
 .chart-axis-select {

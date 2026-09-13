@@ -91,6 +91,12 @@ export function ContourChart({
         backgroundColor: "transparent",
         textStyle: { color: COLOR.text, fontFamily: FONT_FAMILY },
         grid: { left: 100, right: 24, top: 16, bottom: 78 },
+        toolbox: {
+          right: 8,
+          top: 8,
+          iconStyle: { borderColor: COLOR.muted },
+          feature: { saveAsImage: {} },
+        },
         tooltip: {
           ...tooltipStyle,
           formatter: (p: any) => {

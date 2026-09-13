@@ -5,7 +5,7 @@
 
 import { useMemo } from "react";
 import type * as api from "../../api/strategysearch";
-import type { StrategySpec } from "../../api/strategy";
+import type { StrategySpec } from "../../api/strategysearch";
 import { optimizableParams, type ParamOption } from "./SearchBuilders";
 import { FieldLabel, InfoTip } from "./InfoTip";
 
@@ -381,12 +381,24 @@ const SAMPLER_LABELS: Record<api.SamplerKind, string> = {
   gp: "GP (байесовский, медленный)",
 };
 
+// Grid/CMA-ES/QMC требуют статичное пространство поиска — несовместимы со
+// структурным (TemplateBuilder) и рыночным (MarketSpaceBuilder) поиском, см.
+// validateStructuralSamplerCompat в searchValidation.ts. Помечаем это прямо в
+// селекте, а не только тостом при сабмите.
+const STRUCTURAL_INCOMPATIBLE: Partial<Record<api.SamplerKind, true>> = {
+  grid: true,
+  cmaes: true,
+  qmc: true,
+};
+
 export function SamplerBuilder({
   value,
   onChange,
+  structuralActive = false,
 }: {
   value: api.SamplerConfig;
   onChange: (v: api.SamplerConfig) => void;
+  structuralActive?: boolean;
 }) {
   const kind: api.SamplerKind = (Object.keys(value)[0] as api.SamplerKind) ?? "tpe";
 
@@ -422,13 +434,22 @@ export function SamplerBuilder({
       <label className="filter-field">
         <span>Тип</span>
         <select value={kind} onChange={(e) => setKind(e.target.value as api.SamplerKind)}>
-          {(Object.keys(SAMPLER_LABELS) as api.SamplerKind[]).map((k) => (
-            <option key={k} value={k}>
-              {SAMPLER_LABELS[k]}
-            </option>
-          ))}
+          {(Object.keys(SAMPLER_LABELS) as api.SamplerKind[]).map((k) => {
+            const incompatible = structuralActive && STRUCTURAL_INCOMPATIBLE[k];
+            return (
+              <option key={k} value={k} disabled={incompatible}>
+                {SAMPLER_LABELS[k]}
+                {incompatible ? " — недоступно при поиске по палитре/рыночном" : ""}
+              </option>
+            );
+          })}
         </select>
       </label>
+      {structuralActive && STRUCTURAL_INCOMPATIBLE[kind] ? (
+        <p className="strategy-error">
+          {SAMPLER_LABELS[kind]} несовместим со структурным/рыночным поиском — выберите TPE, Random или NSGA-II.
+        </p>
+      ) : null}
       <div className="search-struct-grid">
         {kind === "grid" ? (
           <p className="hint">Перебирает все точки заданного пространства поиска — доп. параметров нет.</p>

@@ -7,6 +7,8 @@
 
 import type * as api from "../../api/strategysearch";
 import type { OptunaSpaceRow } from "./OptunaBuilders";
+import type { TemplateForm } from "./TemplateBuilder";
+import type { MarketSpaceForm } from "./MarketSpaceBuilder";
 
 export type ValidationIssue = { path: string; message: string };
 
@@ -134,6 +136,57 @@ export function validateBudget(nTrials: number, timeoutSeconds: number, nJobs: n
     issues.push({ path: "study.budget.n_jobs", message: "не может быть отрицательным" });
   }
   return issues;
+}
+
+// Зеркалирует validate.Template (manage/pkg/validate/template.go).
+export function validateTemplate(t: TemplateForm): ValidationIssue[] {
+  if (!t.enabled) return [];
+  const issues: ValidationIssue[] = [];
+  if (t.indicatorPalette.length === 0) {
+    issues.push({ path: "template.indicator_palette", message: "нужен хотя бы один тип индикатора" });
+  }
+  if (t.maxIndicators < 1) {
+    issues.push({ path: "template.max_indicators", message: "должен быть больше 0" });
+  }
+  if (t.maxConditionsEntry < 1) {
+    issues.push({ path: "template.max_conditions_entry", message: "должен быть больше 0" });
+  }
+  for (const type of t.indicatorPalette) {
+    for (const row of t.typeRanges[type] ?? []) {
+      if (row.min > row.max) {
+        issues.push({ path: `template.${type}.${row.name}`, message: "мин. не может быть больше макс." });
+      }
+    }
+  }
+  return issues;
+}
+
+export function validateMarketSpace(m: MarketSpaceForm): ValidationIssue[] {
+  if (!m.enabled) return [];
+  const issues: ValidationIssue[] = [];
+  if (!m.periodLengthDays || m.periodLengthDays < 1) {
+    issues.push({ path: "market_space.period_length_days", message: "укажите длину окна бэктеста в днях" });
+  }
+  if (m.mode === "MARKET_MODE_PALETTE" && m.uidFilter.length === 0) {
+    issues.push({ path: "market_space.uid_filter", message: "выберите хотя бы один инструмент для перебора" });
+  }
+  return issues;
+}
+
+// Grid/CmaEs/QMC требуют статическую фиксированную размерность пространства
+// поиска — несовместимы со структурным/рыночным поиском, где набор suggest_*
+// зависит от предыдущих выборов внутри trial (см. engine/search/compose.py,
+// market.py и manage/pkg/validate/template.go:SamplerForStructuralSearch).
+export function validateStructuralSamplerCompat(sampler: api.SamplerConfig, structuralActive: boolean): ValidationIssue[] {
+  if (!structuralActive) return [];
+  const incompatible: [boolean, string][] = [
+    [!!sampler.grid, "GridSampler"],
+    [!!sampler.cmaes, "CmaEsSampler"],
+    [!!sampler.qmc, "QMCSampler"],
+  ];
+  const hit = incompatible.find(([on]) => on);
+  if (!hit) return [];
+  return [{ path: "study.sampler", message: `${hit[1]} несовместим со структурным/рыночным поиском — выберите TPE/Random/NSGA-II` }];
 }
 
 export function validateOptunaSettings(input: {

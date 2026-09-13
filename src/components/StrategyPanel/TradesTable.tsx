@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import * as api from "../../api/strategy";
-import type { TradeRecord } from "../../api/strategy";
+import * as api from "../../api/strategysearch";
+import type { TradeRecord } from "../../api/strategysearch";
 
 const ROW_HEIGHT = 31;
 

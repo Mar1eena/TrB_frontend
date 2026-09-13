@@ -1,4 +1,4 @@
-import type { StrategySpec } from "../../api/strategy";
+import type { StrategySpec } from "../../api/strategysearch";
 
 export type SpecTemplate = { id: string; label: string; description: string; spec: StrategySpec };
 

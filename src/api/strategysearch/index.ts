@@ -1,17 +1,114 @@
 // REST-клиент домена strategysearch (Optuna-поиск) через Envoy grpc_json_transcoder
-// (/v1/strategysearch/*). Зеркало src/api/strategy/index.ts — тот же подход (REST
-// вместо grpc-web) годится и здесь, биндинги объявлены в самом proto.
-//
-// StrategySearchSpec структурно идентична StrategySpec домена strategy (проектировалась
-// как копия) — переиспользуем её тип и конструктор/шаблоны спека оттуда, здесь
-// не дублируем.
-
-import type { RunStatus, StrategySpec } from "../strategy";
-
-export type { RunStatus, StrategySpec };
-export { RUN_STATUS_LABEL, pct, num, fmtDateTime } from "../strategy";
+// (/v1/strategysearch/*) — проще, чем протаскивать сгенерированный grpc-web клиент
+// через vite-prebundle.
 
 const BASE = "/v1/strategysearch";
+
+export type RunStatus =
+  | "RUN_STATUS_UNSPECIFIED"
+  | "RUN_QUEUED"
+  | "RUN_RUNNING"
+  | "RUN_SUCCEEDED"
+  | "RUN_FAILED"
+  | "RUN_CANCELED";
+
+export type StrategySpec = Record<string, unknown>;
+
+// --- каталог стратегий ---
+
+export type Strategy = {
+  id: string;
+  name: string;
+  description: string;
+  spec: StrategySpec;
+  specHash: string;
+  specVersion: number;
+  archived: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ValidationIssue = { path: string; message: string };
+
+// --- отдельные (не связанные с Optuna-поиском) прогоны бэктеста ---
+
+export type EquityPoint = {
+  time: string;
+  equity: number;
+  cash: number;
+  positionValue: number;
+  drawdown: number;
+  ret: number;
+};
+
+export type TradeRecord = {
+  tradeId: number;
+  isLong: boolean;
+  entryTime: string;
+  entryPrice: number;
+  exitTime: string;
+  exitPrice: number;
+  size: number;
+  pnl: number;
+  pnlPct: number;
+  barsHeld: number;
+  mae: number;
+  mfe: number;
+  entryReason: string;
+  exitReason: string;
+};
+
+export type BacktestIndicatorPoint = { time: string; values: Record<string, number> };
+
+export type BacktestIndicatorSeries = {
+  indicatorId: string;
+  indicator: string;
+  outputKey: string;
+  overlay: boolean;
+  points: BacktestIndicatorPoint[];
+};
+
+export type BacktestRun = {
+  runId: string;
+  strategyId: string;
+  spec: StrategySpec;
+  config: BacktestConfig;
+  status: RunStatus;
+  error: string;
+  engineVersion: string;
+  createdAt?: string;
+  startedAt?: string;
+  finishedAt?: string;
+};
+
+export type BacktestRunListItem = { run: BacktestRun; metrics?: BacktestMetrics };
+
+export const RUN_STATUS_LABEL: Record<RunStatus, string> = {
+  RUN_STATUS_UNSPECIFIED: "—",
+  RUN_QUEUED: "в очереди",
+  RUN_RUNNING: "выполняется",
+  RUN_SUCCEEDED: "готово",
+  RUN_FAILED: "ошибка",
+  RUN_CANCELED: "отменён",
+};
+
+export function pct(value: number | undefined | null, digits = 2): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${(value * 100).toFixed(digits)}%`;
+}
+
+export function num(value: number | undefined | null, digits = 2): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return value.toFixed(digits);
+}
+
+export function fmtDateTime(value?: string): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime()) || d.getFullYear() < 1971) return "—";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export type TrialState =
   | "TRIAL_STATE_UNSPECIFIED"
@@ -31,10 +128,13 @@ export const TRIAL_STATE_LABEL: Record<TrialState, string> = {
 };
 
 export type BacktestConfig = {
-  uid: string;
-  interval: number;
-  start: string;
-  end: string;
+  // uid/interval/start/end необязательны, когда SearchRun.marketSpace задан —
+  // тогда инструмент/интервал/период сэмплируются на трайле из marketCandidates,
+  // а не фиксированы для всего поиска (см. StrategyTemplate/MarketSpace ниже).
+  uid?: string;
+  interval?: number;
+  start?: string;
+  end?: string;
   initialCash?: number;
   commissionPct?: number;
   slippagePct?: number;
@@ -99,6 +199,48 @@ export type ParamRange = {
 };
 
 export type SeedTrial = { params: Record<string, number> };
+
+// --- структурный поиск (палитра индикаторов) ---
+//
+// В отличие от ParamRange/searchSpace (тюнинг СКАЛЯРОВ фиксированного baseSpec),
+// template задаёт саму СТРУКТУРУ: индикаторы/условия входа-выхода собирает
+// движок на каждом трайле (см. engine/search/compose.py). baseSpec при этом
+// всё ещё нужен — из него берутся sizing/risk/warmupBars.
+
+export type IndicatorTypeRanges = {
+  indicatorType: string;
+  fieldRanges: ParamRange[];
+};
+
+// CompareOp enum-имена ("COMPARE_OP_GT" и т.п.) — те же строки, что и в
+// StructureSpace генетического поиска (SearchBuilders.tsx: OP_LABELS).
+export type StrategyTemplate = {
+  indicatorPalette: string[];
+  maxIndicators: number;
+  maxConditionsEntry: number;
+  maxConditionsExit?: number; // 0/не задано => exit строится автоматически (обратное условие)
+  typeRanges?: IndicatorTypeRanges[];
+  allowedOps?: string[];
+};
+
+// --- рыночный поиск (инструмент/интервал/окно) ---
+
+export type MarketMode = "MARKET_MODE_PALETTE" | "MARKET_MODE_RANDOM";
+
+export type MarketCandidate = {
+  uid: string;
+  interval: number;
+  availableStart?: string;
+  availableEnd?: string;
+};
+
+export type MarketSpace = {
+  mode: MarketMode;
+  uidFilter?: string[]; // PALETTE: точный список; RANDOM: необязательный доп. отбор
+  intervalFilter?: number[];
+  periodLengthDays: number;
+  minHistoryDays?: number;
+};
 
 // --- семплеры (oneof) ---
 
@@ -197,6 +339,9 @@ export type SearchRun = {
   createdAt?: string;
   startedAt?: string;
   finishedAt?: string;
+  template?: StrategyTemplate;
+  marketSpace?: MarketSpace;
+  marketCandidates?: MarketCandidate[];
 };
 
 // --- сохранённые настройки поиска (пресеты формы) ---
@@ -209,6 +354,8 @@ export type SearchPreset = {
   study?: StudyConfig;
   config?: BacktestConfig;
   createdAt?: string;
+  template?: StrategyTemplate;
+  marketSpace?: MarketSpace;
 };
 
 export type ParamImportance = { path: string; importance: number };
@@ -270,6 +417,8 @@ export function submitSearch(body: {
   searchSpace?: ParamRange[];
   study: StudyConfig;
   config: BacktestConfig;
+  template?: StrategyTemplate;
+  marketSpace?: MarketSpace;
 }): Promise<{ searchId: string; status: RunStatus }> {
   return call(`/searches`, { method: "POST", body: JSON.stringify(body) });
 }
@@ -318,6 +467,8 @@ export function createSearchPreset(body: {
   searchSpace?: ParamRange[];
   study: StudyConfig;
   config: BacktestConfig;
+  template?: StrategyTemplate;
+  marketSpace?: MarketSpace;
 }): Promise<SearchPreset> {
   return call(`/presets`, { method: "POST", body: JSON.stringify(body) });
 }
@@ -331,4 +482,132 @@ export function listSearchPresets(opts: { limit?: number; offset?: number } = {}
 
 export function deleteSearchPreset(id: string): Promise<{ id: string }> {
   return call(`/presets/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// --- каталог стратегий ---
+
+export function listStrategies(opts: {
+  q?: string;
+  includeArchived?: boolean;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<{ items?: Strategy[]; total?: number }> {
+  return call(
+    `/strategies${qs({
+      q: opts.q,
+      includeArchived: opts.includeArchived,
+      limit: opts.limit ?? 200,
+      offset: opts.offset,
+    })}`,
+  );
+}
+
+export function getStrategy(id: string): Promise<Strategy> {
+  return call(`/strategies/${encodeURIComponent(id)}`);
+}
+
+export function createStrategy(body: {
+  name: string;
+  description?: string;
+  spec: StrategySpec;
+}): Promise<Strategy> {
+  return call(`/strategies`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateStrategy(
+  id: string,
+  body: { name: string; description?: string; spec: StrategySpec },
+): Promise<Strategy> {
+  return call(`/strategies/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteStrategy(id: string): Promise<{ id: string; archived: boolean }> {
+  return call(`/strategies/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// DeleteStrategy на бэкенде переключает архивный статус — для архивной стратегии
+// этот же вызов возвращает её из архива.
+export function restoreStrategy(id: string): Promise<{ id: string; archived: boolean }> {
+  return call(`/strategies/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function validateStrategy(
+  spec: StrategySpec,
+): Promise<{ ok: boolean; issues?: ValidationIssue[] }> {
+  return call(`/strategies:validate`, {
+    method: "POST",
+    body: JSON.stringify({ spec }),
+  });
+}
+
+// --- бэктесты (отдельные, не связанные с поиском) ---
+
+export function submitBacktest(body: {
+  strategyId?: string;
+  spec?: StrategySpec;
+  config: BacktestConfig;
+  force?: boolean;
+}): Promise<{ runId: string; status: RunStatus; reused: boolean }> {
+  return call(`/backtests`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export function getBacktestStatus(runId: string): Promise<BacktestRun> {
+  return call(`/backtests/${encodeURIComponent(runId)}`);
+}
+
+export function getBacktestResult(
+  runId: string,
+  opts: {
+    includeEquity?: boolean;
+    includeTrades?: boolean;
+    includeIndicators?: boolean;
+    equityMaxPoints?: number;
+  } = {},
+): Promise<{
+  run: BacktestRun;
+  metrics?: BacktestMetrics;
+  equity?: EquityPoint[];
+  trades?: TradeRecord[];
+  indicators?: BacktestIndicatorSeries[];
+}> {
+  return call(
+    `/backtests/${encodeURIComponent(runId)}/result${qs({
+      includeEquity: opts.includeEquity,
+      includeTrades: opts.includeTrades,
+      includeIndicators: opts.includeIndicators,
+      equityMaxPoints: opts.equityMaxPoints,
+    })}`,
+  );
+}
+
+export function listBacktestRuns(opts: {
+  strategyId?: string;
+  uid?: string;
+  status?: RunStatus;
+  sortBy?: string;
+  sortDesc?: boolean;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<{ items?: BacktestRunListItem[]; total?: number }> {
+  return call(
+    `/backtests${qs({
+      strategyId: opts.strategyId,
+      uid: opts.uid,
+      status: opts.status,
+      sortBy: opts.sortBy,
+      sortDesc: opts.sortDesc,
+      limit: opts.limit ?? 100,
+      offset: opts.offset,
+    })}`,
+  );
+}
+
+export function cancelBacktest(runId: string): Promise<BacktestRun> {
+  return call(`/backtests/${encodeURIComponent(runId)}:cancel`, {
+    method: "POST",
+    body: "{}",
+  });
 }

@@ -9,8 +9,14 @@
 // (coordinate-range brushing), что для разбора гиперпараметров существенно
 // удобнее статичной картинки.
 
+import { useEffect, useState } from "react";
 import type * as api from "../../../api/strategysearch";
 import { COLOR, FONT_FAMILY, PARALLEL_COLORS, tooltipStyle, useECharts } from "./echartsSetup";
+import { ParamChecklist, topByImportance } from "./ParamChecklist";
+
+/** По умолчанию показываем не больше стольких осей — при 8-10+ параметрах
+ * поиска все оси сразу превращают parallel coordinates в нечитаемую кашу. */
+const DEFAULT_AXES = 6;
 
 export function ParallelCoordinatesChart({
   trials,
@@ -18,22 +24,42 @@ export function ParallelCoordinatesChart({
   metric,
   maximize,
   paramLabels,
+  importances,
 }: {
   trials: api.Trial[];
   paramPaths: string[];
   metric: string;
   maximize: boolean;
   paramLabels: Map<string, string>;
+  importances: api.ParamImportance[];
 }) {
-  const complete = trials.filter(
-    (t) => t.state === "TRIAL_STATE_COMPLETE" && t.values?.[metric] != null && paramPaths.every((p) => t.params?.[p] != null),
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(topByImportance(paramPaths, importances, DEFAULT_AXES)),
   );
-  const cols = [...paramPaths, metric];
+
+  // Пересобираем выбор при смене набора параметров (другой запуск поиска) —
+  // сохраняя пересечение с уже выбранными, чтобы не сбрасывать выбор
+  // пользователя лишний раз, когда важности ещё не подгрузились.
+  useEffect(() => {
+    setSelected((prev) => {
+      const kept = paramPaths.filter((p) => prev.has(p));
+      if (kept.length > 0) return new Set(kept);
+      return new Set(topByImportance(paramPaths, importances, DEFAULT_AXES));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paramPaths.join(",")]);
+
+  const axes = paramPaths.filter((p) => selected.has(p));
+
+  const complete = trials.filter(
+    (t) => t.state === "TRIAL_STATE_COMPLETE" && t.values?.[metric] != null && axes.every((p) => t.params?.[p] != null),
+  );
+  const cols = [...axes, metric];
   const objValues = complete.map((t) => t.values![metric]);
   const objMin = objValues.length ? Math.min(...objValues) : 0;
   const objMax = objValues.length ? Math.max(...objValues) : 1;
 
-  const wrapRef = useECharts([trials, paramPaths, metric, maximize, paramLabels], (chart) => {
+  const wrapRef = useECharts([trials, axes.join(","), metric, maximize, paramLabels], (chart) => {
     chart.setOption({
       backgroundColor: "transparent",
       textStyle: { color: COLOR.text, fontFamily: FONT_FAMILY },
@@ -61,7 +87,7 @@ export function ParallelCoordinatesChart({
         right: 8,
         top: 8,
         iconStyle: { borderColor: COLOR.muted },
-        feature: { restore: {} },
+        feature: { saveAsImage: {}, restore: {} },
       },
       parallelAxis: cols.map((c, i) => ({
         dim: i,
@@ -78,7 +104,7 @@ export function ParallelCoordinatesChart({
           lineStyle: { width: 1.2, opacity: 0.55 },
           emphasis: { lineStyle: { width: 2.5, opacity: 1 } },
           data: complete.map((t) => ({
-            value: [...paramPaths.map((p) => t.params![p]), t.values![metric]],
+            value: [...axes.map((p) => t.params![p]), t.values![metric]],
             number: t.number,
           })),
         },
@@ -86,12 +112,36 @@ export function ParallelCoordinatesChart({
     });
   });
 
-  const empty = complete.length === 0;
+  const noAxes = axes.length === 0;
+  const empty = !noAxes && complete.length === 0;
 
   return (
-    <div style={{ position: "relative" }}>
-      {empty ? <p className="hint">Пока нет завершённых трайлов со всеми параметрами.</p> : null}
-      <div ref={wrapRef} className="chart-echarts chart-echarts--tall" aria-label="Parallel coordinates" style={{ display: empty ? "none" : undefined }} />
+    <div>
+      <ParamChecklist
+        paths={paramPaths}
+        paramLabels={paramLabels}
+        selected={selected}
+        onToggle={(p) =>
+          setSelected((prev) => {
+            const next = new Set(prev);
+            if (next.has(p)) next.delete(p);
+            else next.add(p);
+            return next;
+          })
+        }
+        onAll={() => setSelected(new Set(paramPaths))}
+        onNone={() => setSelected(new Set())}
+      />
+      <div style={{ position: "relative" }}>
+        {noAxes ? <p className="hint">Выберите хотя бы один параметр.</p> : null}
+        {empty ? <p className="hint">Пока нет завершённых трайлов со всеми выбранными параметрами.</p> : null}
+        <div
+          ref={wrapRef}
+          className="chart-echarts chart-echarts--tall"
+          aria-label="Parallel coordinates"
+          style={{ display: noAxes || empty ? "none" : undefined }}
+        />
+      </div>
     </div>
   );
 }

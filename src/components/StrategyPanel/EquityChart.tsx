@@ -7,7 +7,7 @@ import {
   type IChartApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { EquityPoint } from "../../api/strategy";
+import type { EquityPoint } from "../../api/strategysearch";
 
 function toSec(iso: string): UTCTimestamp {
   return Math.floor(Date.parse(iso) / 1000) as UTCTimestamp;

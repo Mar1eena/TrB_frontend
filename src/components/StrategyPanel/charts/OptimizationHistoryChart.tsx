@@ -72,7 +72,7 @@ export function OptimizationHistoryChart({
           right: 8,
           top: 8,
           iconStyle: { borderColor: COLOR.muted },
-          feature: { dataZoom: { yAxisIndex: "none" }, restore: {} },
+          feature: { saveAsImage: {}, dataZoom: { yAxisIndex: "none" }, restore: {} },
         },
         dataZoom: [
           { type: "inside", xAxisIndex: 0 },

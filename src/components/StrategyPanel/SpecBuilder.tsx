@@ -2,7 +2,7 @@
 // (той же формы, что уходит на сервер). JSON собирается автоматически.
 
 import { useMemo } from "react";
-import type { StrategySpec, ValidationIssue } from "../../api/strategy";
+import type { StrategySpec, ValidationIssue } from "../../api/strategysearch";
 import { FieldLabel, InfoTip } from "./InfoTip";
 import { RuleTree } from "./RuleTree";
 import { ENUMS, INDICATORS, INDICATOR_BY_KEY } from "./specSchema.generated";
